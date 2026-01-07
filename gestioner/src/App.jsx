@@ -7,10 +7,16 @@ import { getDatosDashboard } from './firebase/consultas';
 import { obtenerPeriodoActual } from './utils/dateUtils';
 
 function App() {
-  const [datos, setDatos] = useState(null);
+const [datos, setDatos] = useState({ stats: {}, listaAdeudos: [], unidades: [] });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
-
+const cargarTodo = async () => {
+  const resultado = await getDatosDashboard("2025-01"); // O tu periodo actual
+  setDatos(resultado);
+};
+useEffect(() => {
+  cargarTodo();
+}, []);
   useEffect(() => {
     const cargarInformacion = async () => {
       try {
@@ -31,10 +37,11 @@ function App() {
 
   return (
     <Layout>
-      <Dashboard 
+ <Dashboard 
   resumen={datos.stats} 
   adeudos={datos.listaAdeudos} 
-  unidades={datos.todasLasUnidades} 
+  unidades={datos.unidades} 
+  refrescarDatos={cargarTodo} // <--- ESTO ES VITAL
 />
     </Layout>
   );
