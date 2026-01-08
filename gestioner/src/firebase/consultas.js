@@ -35,13 +35,11 @@ const formatearFecha = (timestamp) => {
     id: uId,
     id_propiedad: uData.id_propiedad,
     id_inquilino: uData.id_inquilino || null,
-    // PRIORIDAD: Si no existe el inquilino en la base, forzamos "Disponible"
     estado: elInquilinoExiste ? uData.estado : "Disponible",
     nombre_inquilino: elInquilinoExiste ? infoInq.nombre_completo : "Unidad Libre",
     renta_mensual: elInquilinoExiste ? (infoInq.renta_actual || uData.renta_mensual) : uData.renta_mensual,
-    
-    // Datos extendidos del inquilino (solo si existe)
     telefono_emergencia: infoInq?.telefono_emergencia || "",
+    telefono_contacto: infoInq?.telefono_contacto || "",
     deposito_garantia: infoInq?.deposito_garantia || 0,
     dia_pago: infoInq?.dia_pago || 5,
     fecha_inicio: formatearFecha(infoInq?.fecha_inicio_contrato),

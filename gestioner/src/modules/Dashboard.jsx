@@ -4,27 +4,35 @@ import AdeudosTable from './components/AdeudosTable';
 import UnidadesInventario from './components/UnidadesInventario';
 import FormularioNuevoInquilino from './components/FormularioNuevoInquilino';
 
-const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos }) => {
-  // Estado para controlar qué unidad se está editando
+const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos }) => {
+  // 1. Estados para el Modal
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
+  const [modoEdicion, setModoEdicion] = useState(false);
 
-const handleExito = () => {
-    setUnidadSeleccionada(null); // Cierra el modal
-    refrescarDatos(); // <--- Aquí es donde ocurre la "magia" de la actualización
+  // 2. Manejadores de cierre y éxito
+  const handleCerrarModal = () => {
+    setUnidadSeleccionada(null);
+    setModoEdicion(false);
+  };
+
+  const handleExito = () => {
+    handleCerrarModal();
+    refrescarDatos(); // Recarga los datos de Firebase para ver los cambios
   };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 font-sans relative">
       
-      {/* CAPA DE FORMULARIO (Solo aparece si hay una unidad seleccionada) */}
+      {/* CAPA DE FORMULARIO (Modal) */}
       {unidadSeleccionada && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-4xl">
-           <FormularioNuevoInquilino 
-       unidad={unidadSeleccionada} 
-       onExito={handleExito} // <--- Al terminar, dispara el refresco
-       onCancelar={() => setUnidadSeleccionada(null)}
-    />
+            <FormularioNuevoInquilino 
+              unidad={unidadSeleccionada} 
+              esEdicion={modoEdicion} // <--- Le avisa al formulario si debe actualizar o crear
+              onExito={handleExito} 
+              onCancelar={handleCerrarModal}
+            />
           </div>
         </div>
       )}
@@ -39,13 +47,22 @@ const handleExito = () => {
       {/* BLOQUE 2: TABLA DE ADEUDOS */}
       <AdeudosTable adeudos={adeudos} />
 
-      {/* BLOQUE 3: DISPONIBILIDAD 
-          Pasamos la función para "seleccionar" la unidad al inventario */}
-    <UnidadesInventario 
-  unidades={unidades} 
-  onAsignarInquilino={(u) => setUnidadSeleccionada(u)} 
-  onRefrescar={refrescarDatos} // <--- ¡AQUÍ ESTABA EL FALTANTE!
-/>
+      {/* BLOQUE 3: CONTROL DE INVENTARIO */}
+      <UnidadesInventario 
+        unidades={unidades} 
+        // Acción para unidades vacías
+        onAsignarInquilino={(u) => {
+          setModoEdicion(false);
+          setUnidadSeleccionada(u);
+        }} 
+        // Acción para el icono del lápiz (Unidades ocupadas)
+        onEditarInquilino={(u) => {
+          setModoEdicion(true);
+          setUnidadSeleccionada(u);
+        }}
+        onVerPagos={onVerPagos}
+        onRefrescar={refrescarDatos} 
+      />
 
     </div>
   );
