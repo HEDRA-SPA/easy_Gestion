@@ -33,6 +33,7 @@ const FormularioRegistroPago = ({ unidad, onExito, onCancelar }) => {
     luz_lectura: 0,
     medio_pago: "transferencia",
     fecha_pago_realizado: new Date().toISOString().split('T')[0],
+    monto_recibido: totalAPagar,
     periodo_seleccionado: periodosDisponibles[0]?.valor || "", // Default al primer mes del contrato
     notas: ""
   });
@@ -41,6 +42,7 @@ const FormularioRegistroPago = ({ unidad, onExito, onCancelar }) => {
   const excedenteLuz = Math.max(0, formData.luz_lectura - LIMITE_SERVICIO);
   const excedenteTotal = excedenteAgua + excedenteLuz;
   const totalAPagar = formData.monto_renta + excedenteTotal;
+  const saldoPendiente = totalAPagar - formData.monto_recibido;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,7 +62,8 @@ const FormularioRegistroPago = ({ unidad, onExito, onCancelar }) => {
         monto_renta: formData.monto_renta,
         monto_pagado: totalAPagar,
         medio_pago: formData.medio_pago,
-        estatus: "pagado",
+        saldo_pendiente: saldoPendiente,
+        estatus: saldoPendiente <= 0 ? "pagado" : "parcial",
         fecha_pago_realizado: formData.fecha_pago_realizado, 
         servicios: {
           agua_lectura: formData.agua_lectura,
