@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import HistorialPagos from './HistorialPagos';
 import FormularioRegistroPago from './FormularioRegistroPago';
-import { getPagosPorInquilino } from '../firebase/acciones'; // Importa tu función
+import { getPagosPorInquilino } from '../firebase/acciones';
 
 const SeccionPagosInquilino = ({ unidad }) => {
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
@@ -11,7 +11,11 @@ const SeccionPagosInquilino = ({ unidad }) => {
   // Función para cargar los pagos
   const cargarPagos = async () => {
     setCargando(true);
+   // console.log('🔥 Intentando cargar pagos para inquilino:', unidad.id_inquilino);
+   // console.log('🔥 Datos completos de unidad:', unidad);
     const data = await getPagosPorInquilino(unidad.id_inquilino);
+    //console.log('📦 Pagos cargados desde Firebase:', data);
+    //console.log('📦 Cantidad de pagos:', data?.length || 0);*/
     setPagos(data);
     setCargando(false);
   };
@@ -46,10 +50,11 @@ const SeccionPagosInquilino = ({ unidad }) => {
       {/* Switch entre Formulario e Historial */}
       {mostrarFormulario ? (
         <FormularioRegistroPago 
-          unidad={unidad} 
+          unidad={unidad}
+          pagosExistentes={pagos} // ✅ Ahora sí pasa los pagos
           onExito={() => {
             setMostrarFormulario(false);
-            cargarPagos(); // Recarga la lista automáticamente al terminar
+            cargarPagos();
           }}
           onCancelar={() => setMostrarFormulario(false)}
         />

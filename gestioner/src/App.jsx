@@ -1,53 +1,4 @@
-/*
-import React, { useEffect, useState } from 'react';
-import Layout from './modules/Layout';
-import Dashboard from './modules/Dashboard'; // Ruta actualizada
-import { LoadingScreen, ErrorScreen } from './atomics/Feedback'; // Subcomponentes externos
-import { getDatosDashboard } from './firebase/consultas';
-import { obtenerPeriodoActual } from './utils/dateUtils';
 
-function App() {
-const [datos, setDatos] = useState({ stats: {}, listaAdeudos: [], unidades: [] });
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState(false);
-const cargarTodo = async () => {
-  const resultado = await getDatosDashboard("2025-01"); // O tu periodo actual
-  setDatos(resultado);
-};
-useEffect(() => {
-  cargarTodo();
-}, []);
-  useEffect(() => {
-    const cargarInformacion = async () => {
-      try {
-        const respuesta = await getDatosDashboard(obtenerPeriodoActual());
-        if (respuesta) setDatos(respuesta);
-        else setError(true);
-      } catch (e) {
-        setError(true);
-      } finally {
-        setCargando(false);
-      }
-    };
-    cargarInformacion();
-  }, []);
-
-  if (cargando) return <LoadingScreen mensaje="Cargando Dashboard..." />;
-  if (error) return <ErrorScreen mensaje="No pudimos conectar con la base de datos" />;
-
-  return (
-    <Layout>
- <Dashboard 
-  resumen={datos.stats} 
-  adeudos={datos.listaAdeudos} 
-  unidades={datos.unidades} 
-  refrescarDatos={cargarTodo} 
-/>
-    </Layout>
-  );
-}
-
-export default App;*/
 import React, { useEffect, useState } from 'react';
 import Layout from './modules/Layout';
 import Dashboard from './modules/Dashboard'; 
@@ -60,16 +11,23 @@ function App() {
   const [datos, setDatos] = useState({ stats: {}, listaAdeudos: [], unidades: [] });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
+  const [periodoFiltro, setPeriodoFiltro] = useState(new Date().toISOString().split('T')[0].slice(0, 7));
   
   // ESTADO PARA NAVEGACIÓN DE PAGOS
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
 
-  const cargarTodo = async () => {
+  const cargarTodo = async (periodoParaConsultar = periodoFiltro) => {
     try {
-      const respuesta = await getDatosDashboard(obtenerPeriodoActual());
-      if (respuesta) setDatos(respuesta);
-      else setError(true);
+      const respuesta = await getDatosDashboard(periodoParaConsultar);
+      
+      if (respuesta) {
+        setDatos(respuesta);
+        setPeriodoFiltro(periodoParaConsultar); // Actualizamos el estado global
+      } else {
+        setError(true);
+      }
     } catch (e) {
+      console.error(e);
       setError(true);
     } finally {
       setCargando(false);
@@ -105,8 +63,9 @@ function App() {
           resumen={datos.stats} 
           adeudos={datos.listaAdeudos} 
           unidades={datos.unidades} 
-          refrescarDatos={cargarTodo} 
+          refrescarDatos={(nuevoPeriodo) => cargarTodo(nuevoPeriodo)} 
           onVerPagos={(u) => setUnidadSeleccionada(u)} 
+          periodoActual={periodoFiltro} // Le pasamos el valor actual al Dashboard
         />
       )}
     </Layout>

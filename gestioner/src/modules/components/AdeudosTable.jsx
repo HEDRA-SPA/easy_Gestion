@@ -1,11 +1,19 @@
 import React from 'react';
 
-const AdeudosTable = ({ adeudos = [] }) => {
-  const hoy = new Date();
-  const diaActual = hoy.getDate();
-  const mesActual = hoy.toLocaleString('es-MX', { month: 'long' });
+const AdeudosTable = ({ adeudos = [], periodo }) => {
+  const hoyReal = new Date();
+  const [anio, mes] = periodo.split('-').map(Number);
+  const diaActual = hoyReal.getDate();
+  const mesActual = hoyReal.toLocaleString('es-MX', { month: 'long' });
+  const esMesActual = hoyReal.getFullYear() === anio && (hoyReal.getMonth() + 1) === mes;
+  const nombreMesConsulta = new Date(anio, mes - 1).toLocaleString('es-MX', { month: 'long' });
 
   const obtenerEstadoAdeudo = (diaPago) => {
+    // Si consultamos un mes PASADO, todo lo que no esté pagado está VENCIDO
+    if (!esMesActual) return { texto: 'VENCIDO (MES ANT.)', clase: 'bg-red-100 text-red-700' };
+
+    // Si es el mes actual, usamos tu lógica normal
+    const diaActual = hoyReal.getDate();
     return diaActual > diaPago ? 
       { texto: 'VENCIDO', clase: 'bg-red-100 text-red-700' } : 
       { texto: 'POR VENCER', clase: 'bg-yellow-100 text-yellow-700' };
@@ -20,7 +28,7 @@ const AdeudosTable = ({ adeudos = [] }) => {
       {/* HEADER */}
       <div className="bg-gray-800 p-4 flex justify-between items-center">
         <h2 className="text-white font-bold flex items-center gap-2">
-          <span>⚠️</span> Inquilinos con Pago Pendiente
+          <span>⚠️</span> Pendientes de {nombreMesConsulta} {anio}
         </h2>
         <span className="text-gray-400 text-[10px] font-black uppercase tracking-widest">
           {adeudos.length} pendientes

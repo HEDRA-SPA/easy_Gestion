@@ -8,8 +8,8 @@ import ArchivoInquilinos from './ArchivoInquilinos'; // <--- Importamos el compo
 const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos }) => {
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
   const [modoEdicion, setModoEdicion] = useState(false);
-  // 'operacion' = Dashboard normal / 'archivo' = Ex-inquilinos
   const [vista, setVista] = useState('operacion');
+  const [periodoConsulta, setPeriodoConsulta] = useState(new Date().toISOString().split('T')[0].slice(0, 7));
 
   const handleCerrarModal = () => {
     setUnidadSeleccionada(null);
@@ -20,7 +20,24 @@ const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos }) =
     handleCerrarModal();
     refrescarDatos();
   };
+const handleCambioPeriodo = (e) => {
+  const nuevaFecha = e.target.value; // "2026-01-15"
+  const nuevoPeriodo = nuevaFecha.slice(0, 7); // "2026-01"
+  
+  setPeriodoConsulta(nuevoPeriodo);
+  // ¡CLAVE! Pasamos el nuevo periodo directamente a la función que viene de App.js
+  refrescarDatos(nuevoPeriodo); 
+};
+  const handleCambioFechaCompleta = (e) => {
+  const fechaSeleccionada = e.target.value; // Recibe "YYYY-MM-DD"
+  if (!fechaSeleccionada) return;
 
+  // Cortamos el string para obtener solo "YYYY-MM"
+  const nuevoPeriodo = fechaSeleccionada.slice(0, 7); 
+  
+  setPeriodoConsulta(nuevoPeriodo);
+  refrescarDatos(nuevoPeriodo); // Envía solo el mes y año a Firebase
+};
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 font-sans relative">
       
@@ -39,7 +56,23 @@ const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos }) =
           📁 Archivo Histórico
         </button>
       </div>
-
+{vista === 'operacion' && (
+          <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black text-gray-400 uppercase leading-none">Periodo de consulta</span>
+              <input 
+          type="date" 
+          // Para que el input muestre la fecha, necesita el formato YYYY-MM-DD
+          // Le agregamos "-01" para que siempre apunte al día primero visualmente
+          value={`${periodoConsulta}-01`}
+          onChange={handleCambioFechaCompleta}
+          className="text-sm font-bold text-gray-700 outline-none cursor-pointer border-none bg-transparent focus:ring-0"
+        />
+            </div>
+            <div className="h-8 w-[1px] bg-gray-100 mx-1"></div>
+            <span className="text-xl">🗓️</span>
+          </div>
+        )}
       {/* RENDERIZADO CONDICIONAL */}
       {vista === 'operacion' ? (
         <>
@@ -54,18 +87,21 @@ const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos }) =
                   onCancelar={handleCerrarModal}
                 />
               </div>
-            </div>
+              
+          </div>
           )}
-
+          {/* SELECTOR DE PERIODO (Solo visible en Operación) */}
+        
+      
           {/* BLOQUE 1: RESUMEN FINANCIERO */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <StatCard title="Ingreso Esperado" value={resumen.esperado} color="blue" />
-            <StatCard title="Cobrado (Periodo)" value={resumen.pagado} color="green" />
-            <StatCard title="Pendiente / Adeudo" value={resumen.adeudo} color="red" />
+            <StatCard title="Cobrado" value={resumen.pagado} color="green" />
+            <StatCard title="Pendiente" value={resumen.adeudo} color="red" />
           </div>
 
           {/* BLOQUE 2: TABLA DE ADEUDOS */}
-          <AdeudosTable adeudos={adeudos} />
+         <AdeudosTable adeudos={adeudos} periodo={periodoConsulta} />
 
           {/* BLOQUE 3: CONTROL DE INVENTARIO */}
           <UnidadesInventario 
