@@ -13,8 +13,8 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     monto_recibido: 0,
     agua_lectura: 0,
     luz_lectura: 0,
-    medio_pago: "transferencia",
-    fecha_pago: new Date().toISOString().split('T')[0] // Fecha en la que el inquilino pagó
+    medio_pago: "transferencia", // Valor por defecto
+    fecha_pago: new Date().toISOString().split('T')[0] // Hoy por defecto
   });
 
   // Obtener contrato activo
@@ -33,11 +33,34 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     obtenerContrato();
   }, [unidad.id]);
 
-  // Calcular estado financiero del mes seleccionado
-  const estadoFinancieroMes = useMemo(() => {
-    if (!formData.periodo) {
-      return { totalEsperado: 0, abonado: 0, pendiente: 0, existeRegistro: false };
+  // Generar periodos disponibles basados en el contrato
+  const periodosDisponibles = useMemo(() => {
+    if (!contratoActivo?.fecha_inicio || !contratoActivo?.fecha_fin) return [];
+
+    const inicio = contratoActivo.fecha_inicio.toDate ? contratoActivo.fecha_inicio.toDate() : new Date(contratoActivo.fecha_inicio);
+    const fin = contratoActivo.fecha_fin.toDate ? contratoActivo.fecha_fin.toDate() : new Date(contratoActivo.fecha_fin);
+    
+    const periodos = [];
+    let fechaActual = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
+    const fechaLimite = new Date(fin.getFullYear(), fin.getMonth(), 1);
+
+    while (fechaActual <= fechaLimite) {
+      const anio = fechaActual.getFullYear();
+      const mes = fechaActual.getMonth() + 1;
+      const periodo = `${anio}-${mes < 10 ? '0' + mes : mes}`;
+      
+      periodos.push({
+        valor: periodo,
+        texto: fechaActual.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }).toUpperCase()
+      });
+      fechaActual.setMonth(fechaActual.getMonth() + 1);
     }
+    return periodos;
+  }, [contratoActivo]);
+
+  // Calcular estado financiero
+  const estadoFinancieroMes = useMemo(() => {
+    if (!formData.periodo) return { totalEsperado: 0, abonado: 0, pendiente: 0, existeRegistro: false };
 
     const pSel = formData.periodo.trim();
     const pagosDeEsteMes = (pagosExistentes || []).filter(p => String(p.periodo || "").trim() === pSel);
@@ -77,15 +100,19 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (formData.monto_recibido <= 0) return alert("Ingrese un monto válido");
-    setLoading(true);
+    if (formData.monto_recibido <= 0) {
+      alert("Ingrese un monto válido");
+      return;
+    }
 
+    setLoading(true);
     try {
       const [anio, mes] = formData.periodo.split('-').map(Number);
       
       const pData = {
         periodo: formData.periodo,
-        anio, mes,
+        anio,
+        mes,
         id_unidad: unidad.id,
         id_inquilino: unidad.id_inquilino,
         id_contrato: contratoActivo?.id || "sin_contrato",
@@ -93,10 +120,13 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         total_esperado_periodo: estadoFinancieroMes.totalEsperado,
         saldo_restante_periodo: Math.max(0, estadoFinancieroMes.pendiente - Number(formData.monto_recibido)),
         estatus: (estadoFinancieroMes.pendiente - Number(formData.monto_recibido)) <= 0 ? "pagado" : "parcial",
+        
+        // --- AQUÍ ESTÁN TUS DATOS RECUPERADOS ---
         medio_pago: formData.medio_pago,
-        // Usamos la fecha capturada manualmente para el registro histórico
         fecha_pago_realizado: new Date(formData.fecha_pago + "T12:00:00"),
-        fecha_registro: new Date(), // Fecha de auditoría (cuando se pica el botón)
+        // ----------------------------------------
+        
+        fecha_registro: new Date(),
         servicios: {
           agua_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura,
           luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura
@@ -113,111 +143,121 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
   };
 
   return (
-    <div className="bg-white p-6 rounded-xl border-2 border-green-600 shadow-xl max-w-md mx-auto">
+    <div className="bg-white p-6 rounded-xl border-2 border-green-600 shadow-xl max-w-md mx-auto relative">
+      {/* Botón Cerrar */}
+      <button onClick={onCancelar} className="absolute top-2 right-2 text-gray-400 hover:text-red-500 font-bold">✕</button>
+      
       <form onSubmit={handleSubmit} className="space-y-4">
-        
-        {/* FILA SUPERIOR: Periodo y Fecha de Pago */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-blue-900 p-2 rounded text-white text-center">
-            <label className="text-[9px] font-black uppercase block opacity-70">Periodo</label>
-            <select 
-              className="w-full bg-transparent font-bold text-sm outline-none cursor-pointer"
-              value={formData.periodo}
-              onChange={(e) => setFormData({...formData, periodo: e.target.value})}
-              required
-            >
-              <option value="" className="text-black">-- MES --</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
-                <option key={m} value={`2025-${m < 10 ? '0'+m : m}`} className="text-black">
-                  {new Date(2025, m-1).toLocaleDateString('es-MX', {month: 'short'}).toUpperCase()} 2025
-                </option>
-              ))}
-            </select>
-          </div>
+        <h2 className="text-center font-black text-green-700 uppercase tracking-tight">Registro de Pago</h2>
 
-          <div className="bg-gray-100 p-2 rounded border border-gray-300 text-center">
-            <label className="text-[9px] font-black text-gray-500 uppercase block">¿Cuándo pagó?</label>
-            <input 
-              type="date"
-              className="w-full bg-transparent font-bold text-xs outline-none text-center"
-              value={formData.fecha_pago}
-              onChange={(e) => setFormData({...formData, fecha_pago: e.target.value})}
-              required
-            />
-          </div>
+        {/* Selector de Periodo */}
+        <div className="bg-blue-900 p-3 rounded text-white text-center shadow-inner">
+          <label className="text-[10px] font-black uppercase block opacity-70">Mes a Pagar</label>
+          <select 
+            className="w-full bg-transparent font-bold text-center outline-none cursor-pointer"
+            value={formData.periodo}
+            onChange={(e) => setFormData({...formData, periodo: e.target.value})}
+            required
+          >
+            <option value="" className="text-black">-- SELECCIONAR MES --</option>
+            {periodosDisponibles.map(p => (
+              <option key={p.valor} value={p.valor} className="text-black">{p.texto}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Fecha y Medio de Pago (NUEVA SECCIÓN) */}
+        <div className="grid grid-cols-2 gap-3">
+            <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                <label className="text-[9px] font-black text-gray-500 uppercase block">Fecha del pago</label>
+                <input 
+                    type="date"
+                    className="w-full bg-transparent text-sm font-bold outline-none"
+                    value={formData.fecha_pago}
+                    onChange={(e) => setFormData({...formData, fecha_pago: e.target.value})}
+                />
+            </div>
+            <div className="bg-gray-50 p-2 rounded border border-gray-200">
+                <label className="text-[9px] font-black text-gray-500 uppercase block">Medio de pago</label>
+                <select 
+                    className="w-full bg-transparent text-sm font-bold outline-none cursor-pointer"
+                    value={formData.medio_pago}
+                    onChange={(e) => setFormData({...formData, medio_pago: e.target.value})}
+                >
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="deposito">Depósito</option>
+                </select>
+            </div>
         </div>
 
         {/* Sección de Lecturas */}
         <div className={`p-3 rounded-lg border-2 ${estadoFinancieroMes.existeRegistro ? 'bg-gray-100 border-gray-300' : 'bg-blue-50 border-blue-200'}`}>
-          <p className="text-[10px] font-black text-blue-700 mb-2 uppercase italic text-center">
-            {estadoFinancieroMes.existeRegistro ? "⚡ Lecturas fijadas" : "📝 Lecturas del Mes"}
+          <p className="text-[10px] font-black text-blue-700 mb-2 uppercase italic text-center leading-none">
+            {estadoFinancieroMes.existeRegistro ? "Lecturas fijadas (Abono previo)" : "Ingresar lecturas del mes"}
           </p>
           <div className="grid grid-cols-2 gap-4">
-            <div className="text-center">
-              <span className="text-[8px] font-bold text-gray-400 block uppercase">Agua</span>
-              <input 
-                type="number" className="w-full p-1 border rounded font-black text-center text-sm"
-                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura}
-                onChange={(e) => setFormData({...formData, agua_lectura: Number(e.target.value)})}
-                disabled={estadoFinancieroMes.existeRegistro}
-              />
+            <div className="relative">
+                <span className="absolute left-2 top-2 text-[8px] font-bold text-blue-400 uppercase">Agua</span>
+                <input 
+                  type="number" 
+                  className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
+                  value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura}
+                  onChange={(e) => setFormData({...formData, agua_lectura: Number(e.target.value)})}
+                  disabled={estadoFinancieroMes.existeRegistro}
+                />
             </div>
-            <div className="text-center">
-              <span className="text-[8px] font-bold text-gray-400 block uppercase">Luz</span>
-              <input 
-                type="number" className="w-full p-1 border rounded font-black text-center text-sm"
-                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura}
-                onChange={(e) => setFormData({...formData, luz_lectura: Number(e.target.value)})}
-                disabled={estadoFinancieroMes.existeRegistro}
-              />
+            <div className="relative">
+                <span className="absolute left-2 top-2 text-[8px] font-bold text-yellow-500 uppercase">Luz</span>
+                <input 
+                  type="number" 
+                  className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
+                  value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura}
+                  onChange={(e) => setFormData({...formData, luz_lectura: Number(e.target.value)})}
+                  disabled={estadoFinancieroMes.existeRegistro}
+                />
             </div>
           </div>
         </div>
 
         {/* Resumen Financiero */}
-        <div className="bg-gray-900 p-4 rounded-xl text-white">
+        <div className="bg-gray-900 p-4 rounded-xl text-white shadow-lg">
           <div className="flex justify-between text-[10px] opacity-70">
             <span>TOTAL ESPERADO:</span>
             <span>${estadoFinancieroMes.totalEsperado.toLocaleString()}</span>
           </div>
           <div className="flex justify-between text-[10px] text-blue-400 mt-1">
-            <span>YA ABONADO:</span>
+            <span>ABONADO PREVIAMENTE:</span>
             <span>-${estadoFinancieroMes.abonado.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center mt-2 border-t border-gray-700 pt-2">
-            <span className="text-xs font-bold uppercase">Saldo Pendiente:</span>
+            <span className="text-xs font-bold text-gray-400">RESTANTE:</span>
             <span className="text-2xl font-black text-green-400">${estadoFinancieroMes.pendiente.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* Monto y Medio de Pago */}
-        <div className="bg-amber-50 p-4 rounded-xl border-2 border-amber-200 relative">
-          <label className="text-center block text-[10px] font-black text-amber-700 uppercase mb-1">Monto a recibir hoy</label>
-          <input 
-            type="number" 
-            className="w-full text-center text-4xl font-black bg-transparent text-amber-900 outline-none"
-            value={formData.monto_recibido || ""}
-            onChange={(e) => setFormData({...formData, monto_recibido: Number(e.target.value)})}
-          />
-          <div className="mt-2 pt-2 border-t border-amber-200 flex justify-center">
-             <select 
-              className="bg-transparent text-[10px] font-bold uppercase text-amber-800 outline-none"
-              value={formData.medio_pago}
-              onChange={(e) => setFormData({...formData, medio_pago: e.target.value})}
-             >
-               <option value="transferencia">Transferencia</option>
-               <option value="efectivo">Efectivo</option>
-               <option value="deposito">Depósito</option>
-             </select>
+        {/* Input de Pago */}
+        <div className="bg-amber-50 p-4 rounded-xl border-2 border-amber-300 shadow-md">
+          <label className="text-center block text-[10px] font-black text-amber-700 uppercase mb-1">
+            Monto a recibir hoy
+          </label>
+          <div className="flex justify-center items-center">
+              <span className="text-2xl font-black text-amber-700 mr-1">$</span>
+              <input 
+                type="number" 
+                className="w-full text-center text-4xl font-black bg-transparent text-amber-900 outline-none"
+                value={formData.monto_recibido || ""}
+                onChange={(e) => setFormData({...formData, monto_recibido: Number(e.target.value)})}
+              />
           </div>
         </div>
 
         <button 
           type="submit" 
           disabled={loading || !formData.periodo}
-          className="w-full bg-green-600 py-4 rounded-xl text-white font-black uppercase hover:bg-green-700 transition-all shadow-lg disabled:bg-gray-400"
+          className="w-full bg-green-600 py-4 rounded-xl text-white font-black uppercase hover:bg-green-700 transition-all shadow-lg disabled:bg-gray-400 active:scale-95"
         >
-          {loading ? "PROCESANDO..." : "CONFIRMAR REGISTRO"}
+          {loading ? "REGISTRANDO..." : "CONFIRMAR PAGO"}
         </button>
       </form>
     </div>

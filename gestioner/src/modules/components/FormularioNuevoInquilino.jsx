@@ -52,6 +52,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               no_personas: d.no_personas || 1,
               docs: d.docs || { ine: "no", carta: "no", contrato: "no" },
               acompanantes: d.acompanantes || [],
+              id_contrato_actual: d.id_contrato_actual || "",
               activo: true
             });
           }
