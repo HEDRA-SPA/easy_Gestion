@@ -1,21 +1,16 @@
 import React from 'react';
 
-const AdeudosTable = ({ adeudos = [], periodo, modoFiltro, rangoFechas }) => {
+const AdeudosTable = ({ adeudos = [], periodo, modoFiltro }) => {
   const hoyReal = new Date();
 
- const listaFiltrada = adeudos.filter(item => {
-    const monto = item.monto ?? item.saldo_restante_periodo ?? 0;
+  const listaFiltrada = adeudos.filter(item => {
+    // Usamos el campo saldo_restante_periodo que viene de la nueva consulta
+    const monto = item.saldo_restante_periodo ?? item.monto ?? 0;
     return monto > 0;
   });
 
- /*console.log("🔍 AdeudosTable recibió:", {
-    modoFiltro,
-    cantidadAdeudos: adeudos.length,
-    primerAdeudo: adeudos[0]
-  });*/
   const obtenerEstadoAdeudo = (item, diaPago, periodoItem) => {
-    // Prioridad: Pago Parcial
-    if (item.estatus === 'parcial' || item.saldo_restante_periodo > 0) {
+    if (item.estatus === 'parcial' || item.saldo_restante_periodo > 0 && item.monto_pagado > 0) {
       return { texto: 'PAGO PARCIAL', clase: 'bg-orange-500 text-white shadow-sm' };
     }
 
@@ -23,12 +18,10 @@ const AdeudosTable = ({ adeudos = [], periodo, modoFiltro, rangoFechas }) => {
     const fechaItem = new Date(anioItem, mesItem - 1);
     const fechaActual = new Date(hoyReal.getFullYear(), hoyReal.getMonth());
 
-    // Prioridad: Moroso (Meses anteriores)
     if (fechaItem < fechaActual) {
       return { texto: 'MOROSO', clase: 'bg-red-600 text-white animate-pulse' };
     }
 
-    // Estatus normal por día
     const diaActual = hoyReal.getDate();
     return diaActual > diaPago ? 
       { texto: 'VENCIDO', clase: 'bg-red-100 text-red-700 border border-red-200' } : 
@@ -43,12 +36,12 @@ const AdeudosTable = ({ adeudos = [], periodo, modoFiltro, rangoFechas }) => {
             <span className="text-xl">⚠️</span> {modoFiltro === 'rango' ? 'Auditoría de Saldos' : `Pendientes de ${periodo}`}
           </h2>
           <p className="text-blue-400 text-[9px] font-bold uppercase tracking-widest mt-1">
-            Mostrando adeudos totales y saldos por liquidar
+            Mostrando saldos pendientes reales por liquidar
           </p>
         </div>
         <div className="text-right">
           <span className="bg-red-600 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase">
-            {listaFiltrada.length} Cuentas Pendientes
+            {listaFiltrada.length} Pendientes
           </span>
         </div>
       </div>
@@ -68,13 +61,11 @@ const AdeudosTable = ({ adeudos = [], periodo, modoFiltro, rangoFechas }) => {
             {listaFiltrada.length > 0 ? (
               listaFiltrada.map((item, index) => {
                 const diaDePago = item.dia_pago || 5; 
-                const periodoActual = item.periodo || periodo;
-                const estado = obtenerEstadoAdeudo(item, diaDePago, periodoActual);
+                const periodoItem = item.periodo || periodo;
+                const estado = obtenerEstadoAdeudo(item, diaDePago, periodoItem);
                 
-                // Si es parcial usamos saldo_restante, si no, el monto total esperado
-                const montoAMostrar = item.saldo_restante_periodo !== undefined 
-                  ? item.saldo_restante_periodo 
-                  : (item.monto || 0);
+                // Prioridad absoluta al saldo que enviamos desde Firebase
+                const saldoActual = item.saldo_restante_periodo ?? item.monto ?? 0;
 
                 return (
                   <tr key={`${item.id}-${index}`} className="hover:bg-blue-50/30 transition-all group">
@@ -86,24 +77,33 @@ const AdeudosTable = ({ adeudos = [], periodo, modoFiltro, rangoFechas }) => {
 
                     {modoFiltro === 'rango' && (
                       <td className="p-4 text-[10px] font-black text-blue-700">
-                        {periodoActual}
+                        {periodoItem}
                       </td>
                     )}
 
                     <td className="p-4">
                       <p className="text-xs font-black text-gray-800 uppercase">{item.nombre || 'Sin nombre'}</p>
-                      <p className="text-[9px] text-gray-400 font-bold uppercase italic">Contrato: {item.id_contrato?.slice(-6) || 'N/A'}</p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase italic tracking-tighter">
+                        Contrato: {item.id_contrato?.slice(-6) || 'N/A'}
+                      </p>
                     </td>
 
                     <td className="p-4">
                       <div className="flex flex-col">
                         <span className="text-sm font-black text-red-600">
-                          ${montoAMostrar.toLocaleString()}
+                          ${Number(saldoActual).toLocaleString()}
                         </span>
+                        
+                        {/* Información de apoyo para la secretaria */}
                         {item.monto_pagado > 0 && (
-                          <span className="text-[8px] font-bold text-blue-500 uppercase">
-                            Pagado: ${item.monto_pagado.toLocaleString()}
-                          </span>
+                          <div className="flex flex-col leading-none mt-1">
+                             <span className="text-[8px] font-bold text-blue-500 uppercase">
+                               Abonado: ${Number(item.monto_pagado).toLocaleString()}
+                             </span>
+                             <span className="text-[7px] text-gray-400 font-medium uppercase mt-0.5">
+                               de ${Number(item.total_esperado_periodo || 0).toLocaleString()}
+                             </span>
+                          </div>
                         )}
                       </div>
                     </td>

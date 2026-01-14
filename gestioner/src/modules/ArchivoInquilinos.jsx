@@ -2,147 +2,225 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import HistorialContratos from './HistorialContratos';
-
-const ArchivoInquilinos = () => {
+import FormularioRenovacionArchivo from './components/FormularioRenovacionArchivo';
+const ArchivoInquilinos = ({ unidades }) => {
   const [exInquilinos, setExInquilinos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [inquilinoSeleccionado, setInquilinoSeleccionado] = useState(null);
-  const [pagosHistoricos, setPagosHistoricos] = useState([]); // <--- Estado para pagos
-
+  const [pagosHistoricos, setPagosHistoricos] = useState([]);
+  const [loadingPagos, setLoadingPagos] = useState(false);
+const [mostrarModalRenovacion, setMostrarModalRenovacion] = useState(false);
   // 1. Cargar lista de ex-inquilinos
   useEffect(() => {
     const cargarArchivo = async () => {
-      const q = query(collection(db, "inquilinos"), where("activo", "==", false));
-      const snap = await getDocs(q);
-      setExInquilinos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      try {
+        const q = query(collection(db, "inquilinos"), where("activo", "==", false));
+        const snap = await getDocs(q);
+        setExInquilinos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (error) {
+        console.error("Error al cargar archivo:", error);
+      }
     };
     cargarArchivo();
   }, []);
 
-  // 2. Cargar pagos del inquilino seleccionado
+  // 2. Cargar pagos cuando se selecciona un inquilino
   useEffect(() => {
     const cargarPagos = async () => {
       if (!inquilinoSeleccionado) return;
-      
-      const q = query(
-        collection(db, "pagos"), 
-        where("id_inquilino", "==", inquilinoSeleccionado.id),
-        orderBy("periodo", "desc")
-      );
-      const snap = await getDocs(q);
-      setPagosHistoricos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoadingPagos(true);
+      try {
+        const q = query(
+          collection(db, "pagos"), 
+          where("id_inquilino", "==", inquilinoSeleccionado.id),
+          orderBy("periodo", "desc")
+        );
+        const snap = await getDocs(q);
+        setPagosHistoricos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (error) {
+        console.error("Error al cargar pagos:", error);
+        setPagosHistoricos([]);
+      } finally {
+        setLoadingPagos(false);
+      }
     };
     cargarPagos();
   }, [inquilinoSeleccionado]);
 
   const filtrados = exInquilinos.filter(inq => 
-    inq.nombre_completo.toLowerCase().includes(busqueda.toLowerCase())
+    (inq.nombre_completo || "").toLowerCase().includes(busqueda.toLowerCase())
   );
 
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      <div className="max-w-6xl mx-auto">
-        <header className="mb-8">
-          <h1 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">
-            📁 Archivo Histórico <span className="text-gray-400">/ Ex-Inquilinos</span>
-          </h1>
-        </header>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* LISTADO LATERAL (Igual que antes) */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 h-[700px] flex flex-col">
-            <div className="p-4 border-b">
-              <input 
-                type="text"
-                placeholder="Buscar por nombre..."
-                className="w-full p-2 bg-gray-50 border rounded-lg text-xs"
-                onChange={(e) => setBusqueda(e.target.value)}
-              />
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {filtrados.map(inq => (
-                <button
-                  key={inq.id}
-                  onClick={() => setInquilinoSeleccionado(inq)}
-                  className={`w-full text-left p-4 border-b hover:bg-blue-50 transition-colors ${inquilinoSeleccionado?.id === inq.id ? 'bg-blue-50 border-r-4 border-r-blue-500' : ''}`}
-                >
-                  <p className="font-bold text-gray-700 uppercase text-xs">{inq.nombre_completo}</p>
-                  <p className="text-[10px] text-gray-400 uppercase italic">{inq.id_unidad_anterior || 'Sin Unidad'}</p>
-                </button>
-              ))}
-            </div>
+    <div className="animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* PANEL IZQUIERDO: BUSCADOR Y LISTA */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 h-[750px] flex flex-col overflow-hidden">
+          <div className="p-4 bg-gray-50 border-b">
+            <p className="text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest">Filtro de búsqueda</p>
+            <input 
+              type="text"
+              placeholder="Nombre del ex-inquilino..."
+              className="w-full p-3 bg-white border rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
           </div>
-
-          {/* DETALLE DEL EXPEDIENTE */}
-          <div className="md:col-span-2 space-y-6">
-            {inquilinoSeleccionado ? (
-              <>
-                <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-800 p-6 text-white flex justify-between items-center">
-                    <div>
-                      <h2 className="text-xl font-black uppercase">{inquilinoSeleccionado.nombre_completo}</h2>
-                      <p className="opacity-60 text-[10px] tracking-widest uppercase">Expediente Finalizado</p>
-                    </div>
-                  </div>
-
-                  <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest border-b pb-1">Contacto Histórico</h3>
-                      <p className="text-sm font-bold text-gray-600">Tel: <span className="text-gray-900 font-normal">{inquilinoSeleccionado.telefono_contacto}</span></p>
-                      
-                      <div className="mt-6 p-4 bg-red-50 rounded-lg border border-red-100">
-                         <p className="text-[10px] font-black text-red-400 uppercase">Estado de Salida</p>
-                         <p className="text-xs text-red-700 italic">"Este inquilino ya no tiene contratos vigentes en el sistema."</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <HistorialContratos idInquilino={inquilinoSeleccionado.id} />
-                    </div>
-                  </div>
+        
+          <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
+            {filtrados.map(inq => (
+              <button
+                key={inq.id}
+                onClick={() => setInquilinoSeleccionado(inq)}
+                className={`w-full text-left p-5 transition-all ${
+                  inquilinoSeleccionado?.id === inq.id 
+                  ? 'bg-blue-50 border-r-4 border-blue-600' 
+                  : 'hover:bg-gray-50'
+                }`}
+              >
+                <p className="font-black text-gray-800 uppercase text-[11px] mb-1">{inq.nombre_completo}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] bg-gray-200 text-gray-600 px-2 py-0.5 rounded font-bold uppercase">
+                    ID: {inq.id_unidad_actual || 'S/U'}
+                  </span>
+                  <span className="text-[9px] text-gray-400 font-bold uppercase tracking-tighter">
+                    Ver Expediente →
+                  </span>
                 </div>
-
-                {/* TABLA DE PAGOS HISTÓRICOS (NUEVA) */}
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-                  <div className="bg-gray-100 px-6 py-3 border-b">
-                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Historial Completo de Pagos</h3>
-                  </div>
-                  <div className="max-h-[300px] overflow-y-auto">
-                    <table className="w-full text-left">
-                      <thead className="sticky top-0 bg-white border-b">
-                        <tr className="text-[9px] font-black text-gray-400 uppercase">
-                          <th className="p-4">Periodo</th>
-                          <th className="p-4">Monto Renta</th>
-                          <th className="p-4">Excedentes</th>
-                          <th className="p-4">Total Pagado</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {pagosHistoricos.map(pago => (
-                          <tr key={pago.id} className="text-xs hover:bg-gray-50">
-                            <td className="p-4 font-bold text-gray-700">{pago.periodo}</td>
-                            <td className="p-4 text-gray-500">${pago.monto_renta?.toLocaleString()}</td>
-                            <td className="p-4 text-amber-600 font-bold">+${pago.servicios?.excedente_total || 0}</td>
-                            <td className="p-4 font-black text-green-600">${pago.monto_pagado?.toLocaleString()}</td>
-                          </tr>
-                        ))}
-                        {pagosHistoricos.length === 0 && (
-                          <tr>
-                            <td colSpan="4" className="p-10 text-center text-gray-400 italic text-xs">No se encontraron registros de pagos.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="h-[400px] flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-200 rounded-xl bg-white">
-                <span className="text-5xl mb-4">📂</span>
-                <p className="font-black uppercase text-[10px] tracking-widest">Selecciona un registro</p>
-              </div>
+              </button>
+            ))}
+            {filtrados.length === 0 && (
+              <p className="p-10 text-center text-gray-400 text-xs italic">No se encontraron registros.</p>
             )}
+           {inquilinoSeleccionado && (
+            <div className="p-4 bg-gray-50 border-t">
+              <button 
+                onClick={() => setMostrarModalRenovacion(true)} 
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
+              >
+                <span>🔄</span> Re-activar y Renovar
+              </button>
+            </div>
+          )}
           </div>
+        </div>
+
+        {/* PANEL DERECHO: DETALLES */}
+        <div className="md:col-span-2 space-y-6">
+          {inquilinoSeleccionado ? (
+            <>
+              {/* CARD PRINCIPAL: DATOS GENERALES */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="bg-gray-900 p-8 text-white flex justify-between items-start">
+                  <div>
+                    <h2 className="text-2xl font-black uppercase tracking-tight">{inquilinoSeleccionado.nombre_completo}</h2>
+                    <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] mt-1">Inquilino Histórico Finalizado</p>
+                  </div>
+                  <div className="bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/20">
+                    <p className="text-[8px] uppercase font-black opacity-60">Último ID Unidad</p>
+                    <p className="text-lg font-black">{inquilinoSeleccionado.id_unidad_actual || 'OT-01'}</p>
+                  </div>
+                </div>
+
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <div className="space-y-6">
+                    <section>
+                      <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 border-b pb-2">Información de Contacto</h3>
+                      <div className="space-y-2">
+                        <p className="text-sm font-bold text-gray-500">Teléfono: <span className="text-gray-900 font-medium ml-2">{inquilinoSeleccionado.telefono_contacto || '---'}</span></p>
+                        <p className="text-sm font-bold text-gray-500">Emergencia: <span className="text-gray-900 font-medium ml-2">{inquilinoSeleccionado.telefono_emergencia || '---'}</span></p>
+                      </div>
+                    </section>
+
+                    <section className="bg-red-50 p-4 rounded-2xl border border-red-100">
+                      <h3 className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1">Estatus de Salida</h3>
+                      <p className="text-xs text-red-800 italic font-medium leading-relaxed">
+                        "Contrato finalizado el sistema ha liberado la unidad y este perfil ha pasado a modo lectura histórica."
+                      </p>
+                    </section>
+                  </div>
+
+                  <div>
+                    <h3 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 border-b pb-2">Historial de Contratos</h3>
+                    <HistorialContratos idInquilino={inquilinoSeleccionado.id} />
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLA DE PAGOS HISTÓRICOS */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="px-8 py-4 bg-gray-50 border-b flex justify-between items-center">
+                  <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Auditoría de Pagos Realizados</h3>
+                  {loadingPagos && <span className="text-[10px] font-bold text-blue-500 animate-pulse">Cargando...</span>}
+                </div>
+                
+                <div className="max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-left">
+                    <thead className="sticky top-0 bg-white shadow-sm">
+                      <tr className="text-[9px] font-black text-gray-400 uppercase">
+                        <th className="p-5">Periodo</th>
+                        <th className="p-5">Renta Base</th>
+                        <th className="p-5">Servicios</th>
+                        <th className="p-5">Monto Final</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {pagosHistoricos.map(pago => {
+                        const excLuz = pago.servicios?.luz_excedente || 0;
+                        const excAgua = pago.servicios?.agua_excedente || 0;
+                        return (
+                          <tr key={pago.id} className="text-xs hover:bg-gray-50 transition-colors">
+                            <td className="p-5 font-black text-blue-600">{pago.periodo}</td>
+                            <td className="p-5 text-gray-600 font-bold">${Number(pago.monto_renta || 0).toLocaleString()}</td>
+                            <td className="p-5">
+                               <span className={`px-2 py-1 rounded-md font-bold ${excLuz + excAgua > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
+                                 +${(excLuz + excAgua).toLocaleString()}
+                               </span>
+                            </td>
+                            <td className="p-5">
+                              <span className="bg-green-100 text-green-700 px-3 py-1.5 rounded-lg font-black">
+                                ${Number(pago.monto_pagado || 0).toLocaleString()}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {pagosHistoricos.length === 0 && !loadingPagos && (
+                        <tr>
+                          <td colSpan="4" className="p-20 text-center text-gray-400 text-[10px] font-black uppercase italic tracking-widest">
+                            No existen registros de pago para este inquilino.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-gray-200 text-gray-300 p-20">
+              <span className="text-8xl mb-6 opacity-20">📁</span>
+              <p className="text-[11px] font-black uppercase tracking-[0.4em] mb-2 text-gray-400">Expedientes de Archivo</p>
+              <p className="text-xs text-gray-400 opacity-60">Selecciona un registro de la lista lateral para auditar sus contratos y pagos pasados.</p>
+            </div>
+          )}
+          {mostrarModalRenovacion && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="animate-in zoom-in-95 duration-200">
+            <FormularioRenovacionArchivo 
+              inquilino={inquilinoSeleccionado}
+              unidadesDisponibles={unidades} // Le pasamos las unidades para el select
+              onExito={() => {
+                setMostrarModalRenovacion(false);
+                setInquilinoSeleccionado(null);
+                // Aquí podrías disparar un refrescar general si es necesario
+                window.location.reload(); // Opción simple para refrescar estados globales
+              }}
+              onCancelar={() => setMostrarModalRenovacion(false)}
+            />
+          </div>
+        </div>
+      )}
         </div>
       </div>
     </div>

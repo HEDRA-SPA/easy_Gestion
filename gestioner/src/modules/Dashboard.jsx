@@ -1,11 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import StatCard from './components/StatCard';
-import AdeudosTable from './components/AdeudosTable';
 import UnidadesInventario from './components/UnidadesInventario';
 import FormularioNuevoInquilino from './components/FormularioNuevoInquilino';
+import AdeudosTableConValidacion from './components/AdeudosTableConValidacion';
+import { condonarDeuda } from '../firebase/consultas';
 import ArchivoInquilinos from './ArchivoInquilinos';
 
-const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos, periodoActual }) => {
+// ⭐ Agregar inquilinosMap a los props
+const Dashboard = ({ 
+  resumen, 
+  adeudos, 
+  unidades, 
+  inquilinosMap = {}, // ⭐ NUEVO PROP
+  refrescarDatos, 
+  onVerPagos, 
+  periodoActual 
+}) => {
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [vista, setVista] = useState('operacion');
@@ -16,21 +26,19 @@ const Dashboard = ({ resumen, adeudos, unidades, refrescarDatos, onVerPagos, per
     fin: typeof periodoActual === 'string' ? `${periodoActual}-01` : (periodoActual?.fin || new Date().toISOString().split('T')[0])
   });
 
- // Dentro de Dashboard.jsx
-useEffect(() => {
-  const nuevoPeriodo = modoFiltro === 'mes' 
-    ? rangoFechas.inicio.slice(0, 7) 
-    : { inicio: rangoFechas.inicio, fin: rangoFechas.fin };
+  useEffect(() => {
+    const nuevoPeriodo = modoFiltro === 'mes' 
+      ? rangoFechas.inicio.slice(0, 7) 
+      : { inicio: rangoFechas.inicio, fin: rangoFechas.fin };
 
-  // Evitamos disparar si el valor es el mismo que periodoActual (el que viene de App)
-  // Convertimos a string para comparar fácil
-  const pActualStr = JSON.stringify(periodoActual);
-  const pNuevoStr = JSON.stringify(nuevoPeriodo);
+    const pActualStr = JSON.stringify(periodoActual);
+    const pNuevoStr = JSON.stringify(nuevoPeriodo);
 
-  if (pActualStr !== pNuevoStr) {
-    refrescarDatos(nuevoPeriodo);
-  }
-}, [modoFiltro, rangoFechas.inicio, rangoFechas.fin, refrescarDatos, periodoActual]);
+    if (pActualStr !== pNuevoStr) {
+      refrescarDatos(nuevoPeriodo);
+    }
+  }, [modoFiltro, rangoFechas.inicio, rangoFechas.fin, refrescarDatos, periodoActual]);
+
   const listaMeses = useMemo(() => {
     if (modoFiltro === 'mes') return [rangoFechas.inicio.slice(0, 7)];
     
@@ -45,6 +53,18 @@ useEffect(() => {
     }
     return meses;
   }, [modoFiltro, rangoFechas.inicio, rangoFechas.fin]);
+
+  const handleCondonarDeuda = async (adeudo, motivo) => {
+    const resultado = await condonarDeuda(adeudo, motivo);
+    
+    if (resultado.exito) {
+      alert('✅ Deuda condonada exitosamente');
+      const param = modoFiltro === 'mes' ? rangoFechas.inicio.slice(0, 7) : rangoFechas;
+      refrescarDatos(param);
+    } else {
+      alert('❌ Error al condonar: ' + resultado.error);
+    }
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 font-sans">
@@ -88,7 +108,6 @@ useEffect(() => {
                 </>
               )}
             </div>
-            {/* HEMOS QUITADO EL BOTÓN APLICAR AQUÍ */}
           </div>
 
           {/* STATS */}
@@ -107,10 +126,13 @@ useEffect(() => {
                   <div className="inline-block bg-gray-900 text-white px-5 py-1.5 rounded-t-xl text-[10px] font-black uppercase border-b-2 border-blue-500">
                     Periodo: {mes}
                   </div>
-                  <AdeudosTable 
+                  {/* ⭐ Usar inquilinosMap correctamente */}
+                  <AdeudosTableConValidacion 
                     adeudos={adeudosMes} 
                     periodo={mes} 
-                    modoFiltro="mes" 
+                    modoFiltro="mes"
+                    onCondonar={handleCondonarDeuda}
+                    inquilinosMap={inquilinosMap}
                   />
                 </div>
               );
@@ -123,12 +145,17 @@ useEffect(() => {
             onEditarInquilino={(u) => { setModoEdicion(true); setUnidadSeleccionada(u); }} 
             onVerPagos={onVerPagos} 
             onRefrescar={() => {
-              // Si necesitas refrescar manualmente (ej. después de un pago)
               const param = modoFiltro === 'mes' ? rangoFechas.inicio.slice(0, 7) : rangoFechas;
               refrescarDatos(param);
             }} 
           />
         </>
+      )}
+
+      {vista === 'archivo' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <ArchivoInquilinos unidades={unidades} />
+        </div>
       )}
 
       {/* MODAL */}

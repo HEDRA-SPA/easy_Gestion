@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { finalizarContrato } from '../../firebase/acciones';
 import DetalleExpediente from './DetalleExpediente'; // Importamos el nuevo componente
+import { getDoc} from 'firebase/firestore';
 
 const UnidadesInventario = ({ unidades = [], onAsignarInquilino, onEditarInquilino, onRefrescar, onVerPagos }) => {
   const [expandido, setExpandido] = useState(null);
@@ -9,28 +10,23 @@ const UnidadesInventario = ({ unidades = [], onAsignarInquilino, onEditarInquili
   const toggleExpandir = (id) => {
     setExpandido(expandido === id ? null : id);
   };
-
-  const handleFinalizar = async (unidad) => {
-    if (window.confirm(`¿Finalizar contrato de ${unidad.nombre_inquilino}? La unidad quedará libre.`)) {
-      setLoadingAction(true);
-      try {
-        await finalizarContrato(unidad.id, unidad.id_inquilino, {
-          fecha_inicio: unidad.fecha_inicio,
-          fecha_fin: unidad.fecha_fin,
-          renta_actual: unidad.renta_mensual,
-          deposito_garantia: unidad.deposito_garantia
-        });
-        alert("✅ Contrato finalizado correctamente.");
-        onRefrescar(); 
-      } catch (error) {
-        console.error(error);
-        alert("❌ Error: " + error.message);
-      } finally {
-        setLoadingAction(false);
-      }
+const handleFinalizar = async (unidad) => {
+  if (window.confirm(`¿Finalizar contrato de ${unidad.nombre_inquilino}? La unidad quedará libre.`)) {
+    setLoadingAction(true);
+    try {
+      // Solo pasamos los IDs, la función se encarga de extraer los datos del Inquilino
+      await finalizarContrato(unidad.id, unidad.id_inquilino);
+      
+      alert("✅ Contrato finalizado y guardado en historial.");
+      onRefrescar(); 
+    } catch (error) {
+      console.error(error);
+      alert("❌ Error: " + error.message);
+    } finally {
+      setLoadingAction(false);
     }
-  };
-
+  }
+};
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">

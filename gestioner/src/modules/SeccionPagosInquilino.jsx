@@ -11,11 +11,7 @@ const SeccionPagosInquilino = ({ unidad }) => {
   // Función para cargar los pagos
   const cargarPagos = async () => {
     setCargando(true);
-   // console.log('🔥 Intentando cargar pagos para inquilino:', unidad.id_inquilino);
-   // console.log('🔥 Datos completos de unidad:', unidad);
     const data = await getPagosPorInquilino(unidad.id_inquilino);
-    //console.log('📦 Pagos cargados desde Firebase:', data);
-    //console.log('📦 Cantidad de pagos:', data?.length || 0);*/
     setPagos(data);
     setCargando(false);
   };

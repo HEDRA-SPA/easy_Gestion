@@ -6,16 +6,18 @@ import { LoadingScreen, ErrorScreen } from './atomics/Feedback';
 import { getDatosDashboard } from './firebase/consultas';
 
 function App() {
-  const [datos, setDatos] = useState({ stats: {}, listaAdeudos: [], unidades: [] });
+  const [datos, setDatos] = useState({ 
+    stats: {}, 
+    listaAdeudos: [], 
+    unidades: [],
+    inquilinosMap: {} // ⭐ Agregar aquí
+  });
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(false);
   const [periodoFiltro, setPeriodoFiltro] = useState(new Date().toISOString().split('T')[0].slice(0, 7));
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
-// 2. Envolver la función en useCallback
+
   const cargarTodo = useCallback(async (periodo) => {
-    // Ponemos un guardia para no cargar si ya estamos cargando
-    // (pero no el setCargando inicial)
-    
     try {
       console.log("🔍 Cargando datos para:", periodo);
       const respuesta = await getDatosDashboard(periodo);
@@ -32,12 +34,11 @@ function App() {
     } finally {
       setCargando(false);
     }
-  }, []); // El array vacío significa: "Crea esta función solo una vez"
+  }, []);
 
-  // 3. Efecto inicial limpio
   useEffect(() => {
     cargarTodo(periodoFiltro);
-  }, [cargarTodo]); // Ahora es seguro ponerla aquí
+  }, [cargarTodo]);
 
   if (cargando) return <LoadingScreen mensaje="Cargando Dashboard..." />;
   if (error) return <ErrorScreen mensaje="No pudimos conectar con la base de datos" />;
@@ -59,7 +60,8 @@ function App() {
         <Dashboard 
           resumen={datos.stats} 
           adeudos={datos.listaAdeudos} 
-          unidades={datos.unidades} 
+          unidades={datos.unidades}
+          inquilinosMap={datos.inquilinosMap} // ⭐ Pasar el mapa
           refrescarDatos={cargarTodo}
           onVerPagos={(u) => setUnidadSeleccionada(u)} 
           periodoActual={periodoFiltro}

@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore'; // Añadimos doc y getDoc
 import { db } from '../firebase/config';
 import { registrarPagoFirebase } from '../firebase/acciones';
 
 const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCancelar }) => {
-  const LIMITE_SERVICIO = 250;
+  // 1. Estado para los límites dinámicos
+  const [limitesPropiedad, setLimitesPropiedad] = useState({ agua: 250, luz: 250 }); // Valores por defecto
   const [loading, setLoading] = useState(false);
   const [contratoActivo, setContratoActivo] = useState(null);
 
@@ -13,11 +14,32 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     monto_recibido: 0,
     agua_lectura: 0,
     luz_lectura: 0,
-    medio_pago: "transferencia", // Valor por defecto
-    fecha_pago: new Date().toISOString().split('T')[0] // Hoy por defecto
+    medio_pago: "transferencia",
+    fecha_pago: new Date().toISOString().split('T')[0]
   });
 
-  // Obtener contrato activo
+  // 2. EFECTO PARA TRAER LÍMITES DE LA PROPIEDAD
+  useEffect(() => {
+    const obtenerLimites = async () => {
+      if (!unidad?.id_propiedad) return;
+      try {
+        const propRef = doc(db, "propiedades", unidad.id_propiedad);
+        const propSnap = await getDoc(propRef);
+        if (propSnap.exists()) {
+          const data = propSnap.data();
+          setLimitesPropiedad({
+            agua: Number(data.limite_agua || 250),
+            luz: Number(data.limite_luz || 250)
+          });
+        }
+      } catch (error) {
+        console.error("Error obteniendo límites:", error);
+      }
+    };
+    obtenerLimites();
+  }, [unidad?.id_propiedad]);
+
+  // Obtener contrato activo (se mantiene igual)
   useEffect(() => {
     const obtenerContrato = async () => {
       const q = query(
@@ -33,24 +55,19 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     obtenerContrato();
   }, [unidad.id]);
 
-  // Generar periodos disponibles basados en el contrato
+  // Generar periodos (se mantiene igual)
   const periodosDisponibles = useMemo(() => {
     if (!contratoActivo?.fecha_inicio || !contratoActivo?.fecha_fin) return [];
-
     const inicio = contratoActivo.fecha_inicio.toDate ? contratoActivo.fecha_inicio.toDate() : new Date(contratoActivo.fecha_inicio);
     const fin = contratoActivo.fecha_fin.toDate ? contratoActivo.fecha_fin.toDate() : new Date(contratoActivo.fecha_fin);
-    
     const periodos = [];
     let fechaActual = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
     const fechaLimite = new Date(fin.getFullYear(), fin.getMonth(), 1);
-
     while (fechaActual <= fechaLimite) {
       const anio = fechaActual.getFullYear();
       const mes = fechaActual.getMonth() + 1;
-      const periodo = `${anio}-${mes < 10 ? '0' + mes : mes}`;
-      
       periodos.push({
-        valor: periodo,
+        valor: `${anio}-${mes < 10 ? '0' + mes : mes}`,
         texto: fechaActual.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }).toUpperCase()
       });
       fechaActual.setMonth(fechaActual.getMonth() + 1);
@@ -58,7 +75,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     return periodos;
   }, [contratoActivo]);
 
-  // Calcular estado financiero
+  // 3. CALCULAR ESTADO FINANCIERO CON LÍMITES DINÁMICOS
   const estadoFinancieroMes = useMemo(() => {
     if (!formData.periodo) return { totalEsperado: 0, abonado: 0, pendiente: 0, existeRegistro: false };
 
@@ -79,8 +96,11 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
       };
     } else {
       const rentaBase = Number(contratoActivo?.monto_renta || unidad?.renta_mensual || 0);
-      const excAgua = Math.max(0, Number(formData.agua_lectura) - LIMITE_SERVICIO);
-      const excLuz = Math.max(0, Number(formData.luz_lectura) - LIMITE_SERVICIO);
+      
+      // USAMOS LOS LÍMITES DE LA PROPIEDAD AQUÍ
+      const excAgua = Math.max(0, Number(formData.agua_lectura) - limitesPropiedad.agua);
+      const excLuz = Math.max(0, Number(formData.luz_lectura) - limitesPropiedad.luz);
+      
       const totalCalculado = rentaBase + excAgua + excLuz;
 
       return {
@@ -90,8 +110,9 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         existeRegistro: false
       };
     }
-  }, [formData.periodo, formData.agua_lectura, formData.luz_lectura, pagosExistentes, contratoActivo, unidad]);
+  }, [formData.periodo, formData.agua_lectura, formData.luz_lectura, pagosExistentes, contratoActivo, unidad, limitesPropiedad]);
 
+  // Sincronizar monto recibido (se mantiene igual)
   useEffect(() => {
     if (formData.periodo && estadoFinancieroMes.pendiente > 0) {
       setFormData(prev => ({ ...prev, monto_recibido: estadoFinancieroMes.pendiente }));
@@ -108,11 +129,9 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     setLoading(true);
     try {
       const [anio, mes] = formData.periodo.split('-').map(Number);
-      
       const pData = {
         periodo: formData.periodo,
-        anio,
-        mes,
+        anio, mes,
         id_unidad: unidad.id,
         id_inquilino: unidad.id_inquilino,
         id_contrato: contratoActivo?.id || "sin_contrato",
@@ -120,16 +139,14 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         total_esperado_periodo: estadoFinancieroMes.totalEsperado,
         saldo_restante_periodo: Math.max(0, estadoFinancieroMes.pendiente - Number(formData.monto_recibido)),
         estatus: (estadoFinancieroMes.pendiente - Number(formData.monto_recibido)) <= 0 ? "pagado" : "parcial",
-        
-        // --- AQUÍ ESTÁN TUS DATOS RECUPERADOS ---
         medio_pago: formData.medio_pago,
-        fecha_pago_realizado: new Date(formData.fecha_pago + "T12:00:00"),
-        // ----------------------------------------
-        
+        fecha_pago_realizado: formData.fecha_pago, // Pasamos string, la acción lo convierte
         fecha_registro: new Date(),
         servicios: {
           agua_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura,
-          luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura
+          luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura,
+          limite_agua_aplicado: limitesPropiedad.agua, // Opcional: guardar qué limite se usó
+          limite_luz_aplicado: limitesPropiedad.luz
         }
       };
 
@@ -141,7 +158,6 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
       setLoading(false);
     }
   };
-
   return (
     <div className="bg-white p-6 rounded-xl border-2 border-green-600 shadow-xl max-w-md mx-auto relative">
       {/* Botón Cerrar */}
@@ -191,14 +207,14 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
             </div>
         </div>
 
-        {/* Sección de Lecturas */}
+   {/* SECCIÓN LECTURAS */}
         <div className={`p-3 rounded-lg border-2 ${estadoFinancieroMes.existeRegistro ? 'bg-gray-100 border-gray-300' : 'bg-blue-50 border-blue-200'}`}>
           <p className="text-[10px] font-black text-blue-700 mb-2 uppercase italic text-center leading-none">
             {estadoFinancieroMes.existeRegistro ? "Lecturas fijadas (Abono previo)" : "Ingresar lecturas del mes"}
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="relative">
-                <span className="absolute left-2 top-2 text-[8px] font-bold text-blue-400 uppercase">Agua</span>
+                <span className="absolute left-2 top-2 text-[8px] font-bold text-blue-400 uppercase">Agua (Límite ${limitesPropiedad.agua})</span>
                 <input 
                   type="number" 
                   className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
@@ -208,7 +224,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
                 />
             </div>
             <div className="relative">
-                <span className="absolute left-2 top-2 text-[8px] font-bold text-yellow-500 uppercase">Luz</span>
+                <span className="absolute left-2 top-2 text-[8px] font-bold text-yellow-500 uppercase">Luz (Límite ${limitesPropiedad.luz})</span>
                 <input 
                   type="number" 
                   className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
@@ -219,8 +235,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
             </div>
           </div>
         </div>
-
-        {/* Resumen Financiero */}
+{/* RESUMEN FINANCIERO */}
         <div className="bg-gray-900 p-4 rounded-xl text-white shadow-lg">
           <div className="flex justify-between text-[10px] opacity-70">
             <span>TOTAL ESPERADO:</span>
@@ -236,7 +251,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
           </div>
         </div>
 
-        {/* Input de Pago */}
+        {/* INPUT MONTO RECIBIDO */}
         <div className="bg-amber-50 p-4 rounded-xl border-2 border-amber-300 shadow-md">
           <label className="text-center block text-[10px] font-black text-amber-700 uppercase mb-1">
             Monto a recibir hoy
@@ -263,5 +278,4 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     </div>
   );
 };
-
 export default FormularioRegistroPago;
