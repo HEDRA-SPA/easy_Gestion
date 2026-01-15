@@ -5,6 +5,7 @@ import FormularioNuevoInquilino from './components/FormularioNuevoInquilino';
 import AdeudosTableConValidacion from './components/AdeudosTableConValidacion';
 import { condonarDeuda } from '../firebase/consultas';
 import ArchivoInquilinos from './ArchivoInquilinos';
+import GestionPropiedades from './components/GestionPropiedades';
 
 // ⭐ Agregar inquilinosMap a los props
 const Dashboard = ({ 
@@ -175,6 +176,7 @@ const Dashboard = ({
           </div>
         </div>
       )}
+      <GestionPropiedades/>
     </div>
   );
 };
