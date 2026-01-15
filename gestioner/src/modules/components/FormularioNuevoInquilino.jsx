@@ -9,7 +9,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
     nombre_completo: "",
     telefono_contacto: "",
     telefono_emergencia: "",
-    deposito_garantia: unidad?.renta_mensual || 0,
+    deposito_garantia_inicial: unidad?.renta_mensual || 0,
     dia_pago: 5,
     renta_actual: unidad?.renta_mensual || 0,
     fecha_inicio_contrato: "",
@@ -44,7 +44,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               nombre_completo: d.nombre_completo || "",
               telefono_contacto: d.telefono_contacto || "",
               telefono_emergencia: d.telefono_emergencia || "",
-              deposito_garantia: d.deposito_garantia || 0,
+              deposito_garantia_inicial: d.deposito_garantia_inicial || 0,
               dia_pago: d.dia_pago || 5,
               renta_actual: d.renta_actual || 0,
               fecha_inicio_contrato: fmt(d.fecha_inicio_contrato),
@@ -153,7 +153,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
           </div>
           <div>
             <label className={`text-[10px] font-black uppercase ${esEdicion ? 'text-amber-600' : 'text-blue-500'}`}>Depósito</label>
-            <input type="number" name="deposito_garantia" disabled={loading} value={formData.deposito_garantia} className={`w-full p-2 border-0 rounded-lg font-bold shadow-sm ${esEdicion ? 'text-amber-700' : 'text-blue-600'}`} onChange={handleChange} />
+            <input type="number" name="deposito_garantia_inicial" disabled={loading} value={formData.deposito_garantia_inicial} className={`w-full p-2 border-0 rounded-lg font-bold shadow-sm ${esEdicion ? 'text-amber-700' : 'text-blue-600'}`} onChange={handleChange} />
           </div>
           <div>
             <label className="text-[10px] font-black text-red-500 uppercase italic">Día de Pago</label>

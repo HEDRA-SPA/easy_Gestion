@@ -79,7 +79,47 @@ const GestionPropiedades = () => {
       alert("✅ Propiedad clausurada.");
     } catch (e) { alert("Error al clausurar"); } finally { setCargando(false); }
   };
+const handleReactivarPropiedad = async (prop) => {
+    if (window.confirm(`¿Deseas habilitar nuevamente la propiedad "${prop.nombre.toUpperCase()}"?\n\nEsto hará que el edificio y sus unidades vuelvan a aparecer en el sistema activo.`)) {
+      setCargando(true);
+      try {
+        const batch = writeBatch(db);
 
+        // 1. OBTENER TODAS LAS UNIDADES DE ESTA PROPIEDAD
+        const unidadesRef = collection(db, 'unidades');
+        const qUnidades = query(unidadesRef, where("id_propiedad", "==", prop.id));
+        const snapshotUnidades = await getDocs(qUnidades);
+        
+        // 2. ACTUALIZAR CADA UNIDAD
+        snapshotUnidades.forEach((unidadDoc) => {
+          const data = unidadDoc.data();
+          // Si la unidad tiene un inquilino (id_inquilino no es null), 
+          // debería quedar como "Ocupado", de lo contrario "Disponible"
+          const nuevoEstado = (data.id_inquilino || data.nombre_inquilino) ? "Ocupado" : "Disponible";
+          
+          batch.update(unidadDoc.ref, { 
+            estado: nuevoEstado,
+            ultima_modificacion: new Date().toISOString()
+          });
+        });
+
+        // 3. ACTUALIZAR LA PROPIEDAD A "ACTIVA"
+        const propRef = doc(db, 'propiedades', prop.id);
+        batch.update(propRef, { 
+          estado: "Activa",
+          fecha_reactivacion: new Date().toISOString() // Opcional: para registro histórico
+        });
+
+        await batch.commit();
+        alert("🏢 Propiedad y unidades reactivadas con éxito.");
+      } catch (error) {
+        console.error("Error al reactivar:", error);
+        alert("Hubo un error técnico al intentar reactivar la propiedad.");
+      } finally {
+        setCargando(false);
+      }
+    }
+  };
   const handleAgregar = async (e) => {
     e.preventDefault();
     if (!nuevaProp.id || !nuevaProp.nombre || !nuevaProp.prefijo || nuevaProp.total_unidades <= 0) {

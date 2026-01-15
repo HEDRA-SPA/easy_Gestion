@@ -9,7 +9,7 @@ const FormularioRenovacionArchivo = ({ inquilino, unidadesDisponibles, onExito, 
     fecha_inicio_contrato: "",
     fecha_fin_contrato: "",
     dia_pago: inquilino.dia_pago || 5,
-    deposito_garantia: inquilino.deposito_garantia || 0,
+    deposito_garantia_inicial: inquilino.deposito_garantia_inicial || 0,
     no_personas: inquilino.no_personas || 1,
   });
 const handleSubmit = async (e) => {
@@ -24,7 +24,7 @@ const handleSubmit = async (e) => {
       {
         ...formData,
         nombre_completo: inquilino.nombre_completo,
-        deposito_garantia: inquilino.deposito_garantia
+        deposito_garantia_inicial: inquilino.deposito_garantia_inicial
       }
     );
     
