@@ -4,6 +4,21 @@ import { collection, getDocs, query, where, doc, setDoc, serverTimestamp } from 
 // ============================================
 // FUNCIÓN: Condonar deuda con estructura uniforme
 // ============================================
+
+const limpiarDatos = (obj) => {
+  const nuevoObj = {};
+  Object.keys(obj).forEach((key) => {
+    if (obj[key] === undefined) {
+      nuevoObj[key] = null; // O puedes usar delete para no enviarlo
+    } else if (obj[key] !== null && typeof obj[key] === 'object' && !(obj[key] instanceof Date) && key !== 'createdAt' && key !== 'fecha_condonacion' && key !== 'fecha_registro') {
+      // Si es un objeto (y no es una fecha o un serverTimestamp), lo limpiamos también
+      nuevoObj[key] = limpiarDatos(obj[key]);
+    } else {
+      nuevoObj[key] = obj[key];
+    }
+  });
+  return nuevoObj;
+};
 export const condonarDeuda = async (adeudo, motivo) => {
   try {
     const idPago = `${adeudo.id_unidad}_${adeudo.periodo}`;
@@ -11,56 +26,46 @@ export const condonarDeuda = async (adeudo, motivo) => {
     
     const [anio, mes] = adeudo.periodo.split('-').map(Number);
 
-    // Estructura IDÉNTICA a un pago normal + campos de condonación
-    const dataCondonacion = {
+    const dataRaw = {
       anio: anio,
       mes: mes,
       periodo: adeudo.periodo,
       id_unidad: adeudo.id_unidad,
-      id_inquilino: adeudo.id_inquilino || '',
+      id_inquilino: adeudo.id_inquilino || '', // Ahora sí vendrá lleno
       id_contrato: adeudo.id_contrato || '',
       
-      // Montos
-      monto_pagado: adeudo.monto_pagado || 0,
-      saldo_restante_periodo: 0, // Al condonar, el saldo queda en 0
-      total_esperado_periodo: adeudo.total_esperado_periodo || adeudo.saldo_restante_periodo,
+      monto_pagado: Number(adeudo.monto_pagado || 0),
+      saldo_restante_periodo: 0,
+      total_esperado_periodo: Number(adeudo.total_esperado_periodo || (adeudo.monto + (adeudo.monto_pagado || 0))),
       
-      // Estado
       estatus: 'condonado',
       medio_pago: 'condonacion',
       
-      // Fechas
       createdAt: serverTimestamp(),
       fecha_registro: serverTimestamp(),
-      fecha_pago_realizado: null,
-      
-      // Servicios (mantener estructura)
-      servicios: adeudo.servicios || {
-        agua_lectura: 250,
-        luz_lectura: 250
-      },
-      
-      // ⭐ CAMPOS DE CONDONACIÓN (para filtrado)
+     
       condonado: true,
       fecha_condonacion: serverTimestamp(),
-      motivo_condonacion: motivo,
-      monto_condonado: adeudo.saldo_restante_periodo,
+      motivo_condonacion: motivo || "Sin motivo",
+      monto_condonado: Number(adeudo.monto || 0),
       
-      // Auditoría
       estado_previo: {
-        saldo_antes: adeudo.saldo_restante_periodo,
-        pagado_antes: adeudo.monto_pagado,
-        estatus_antes: adeudo.estatus
+        saldo_antes: Number(adeudo.monto || 0),
+        pagado_antes: Number(adeudo.monto_pagado || 0),
+        estatus_antes: adeudo.estatus || 'pendiente'
       }
     };
 
-    await setDoc(pagoRef, dataCondonacion, { merge: true });
+    // Al limpiar, eliminamos undefined y nulos innecesarios
+    const dataFinal = limpiarDatos(dataRaw);
 
-    console.log("✅ Deuda condonada:", idPago);
+    await setDoc(pagoRef, dataFinal, { merge: true });
+
+    console.log("✅ Condonación exitosa con ID de Inquilino:", adeudo.id_inquilino);
     return { exito: true };
 
   } catch (error) {
-    console.error("❌ Error al condonar deuda:", error);
+    console.error("❌ Error Crítico en condonarDeuda:", error);
     return { exito: false, error: error.message };
   }
 };
@@ -232,6 +237,7 @@ export const getDatosDashboard = async (periodoActual) => {
           listaAdeudosDesglosada.push({
             id: `${u.id}_${mes}`,
             id_unidad: u.id,
+            id_inquilino: u.id_inquilino,
             periodo: mes, 
             nombre: inq.nombre_completo,
             monto: pendiente,
