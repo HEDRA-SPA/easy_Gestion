@@ -136,15 +136,15 @@ const inquilinoTeniaContratoEnPeriodo = (inquilino, periodo) => {
   
   return { activo: false, finalizado: false };
 };
-
 // ============================================
-// FUNCIÓN PRINCIPAL: getDatosDashboard con validación
+// FUNCIÓN PRINCIPAL: getDatosDashboard con validación de pagos múltiples
 // ============================================
 export const getDatosDashboard = async (periodoActual) => {
   try {
-    const esRango = typeof periodoActual === 'object';
-    const inicioStr = esRango ? periodoActual.inicio.slice(0, 7) : periodoActual;
-    const finStr = esRango ? periodoActual.fin.slice(0, 7) : periodoActual;
+    // 1. Normalizar el rango de búsqueda
+    const esRango = typeof periodoActual === 'object' && periodoActual.inicio && periodoActual.fin;
+    const inicioStr = esRango ? periodoActual.inicio.slice(0, 7) : (typeof periodoActual === 'string' ? periodoActual : new Date().toISOString().slice(0, 7));
+    const finStr = esRango ? periodoActual.fin.slice(0, 7) : inicioStr;
 
     const [uSnap, iSnap, pSnap] = await Promise.all([
       getDocs(collection(db, "unidades")),
@@ -152,26 +152,47 @@ export const getDatosDashboard = async (periodoActual) => {
       getDocs(collection(db, "pagos"))
     ]);
 
-    // Mapear inquilinos con TODA su información
     const inqsMap = {};
-    iSnap.forEach(doc => { 
-      inqsMap[doc.id] = { id: doc.id, ...doc.data() }; 
-    });
+    iSnap.forEach(doc => { inqsMap[doc.id] = { id: doc.id, ...doc.data() }; });
 
+    // 2. Crear meses a evaluar sin errores de zona horaria
     const mesesAEvaluar = [];
-    let curr = new Date(inicioStr + "-02");
-    const finDate = new Date(finStr + "-02");
-    while (curr <= finDate) {
-      mesesAEvaluar.push(curr.toISOString().slice(0, 7));
-      curr.setMonth(curr.getMonth() + 1);
+    let [startAnio, startMes] = inicioStr.split('-').map(Number);
+    let [endAnio, endMes] = finStr.split('-').map(Number);
+    
+    let fechaInicio = new Date(startAnio, startMes - 1, 1);
+    let fechaFin = new Date(endAnio, endMes - 1, 1);
+
+    while (fechaInicio <= fechaFin) {
+      mesesAEvaluar.push(fechaInicio.toISOString().slice(0, 7));
+      fechaInicio.setMonth(fechaInicio.getMonth() + 1);
     }
 
-    // Filtrar pagos condonados
+    // 3. ⭐ EL MAPA DE PAGOS: Solo sumar si NO está condonado
     const pagosLookup = {};
     pSnap.docs.forEach(doc => {
       const p = doc.data();
-      if (p.condonado !== true) {
-        pagosLookup[`${p.id_unidad}_${p.periodo}`] = p;
+      if (p.condonado === true) return;
+
+      const key = `${p.id_unidad}_${p.periodo}`;
+      if (!pagosLookup[key]) {
+        pagosLookup[key] = { 
+          monto_acumulado: 0, 
+          total_esperado: Number(p.total_esperado_periodo || 0) 
+        };
+      }
+      pagosLookup[key].monto_acumulado += Number(p.monto_pagado || 0);
+      // Mantener siempre el total esperado más alto (por si hubo servicios)
+      if (Number(p.total_esperado_periodo) > pagosLookup[key].total_esperado) {
+        pagosLookup[key].total_esperado = Number(p.total_esperado_periodo);
+      }
+    });
+
+    // 4. EL MAPA DE CONDONACIONES (Para excluir rápido)
+    const condonadosSet = new Set();
+    pSnap.docs.forEach(doc => {
+      if (doc.data().condonado === true) {
+        condonadosSet.add(`${doc.data().id_unidad}_${doc.data().periodo}`);
       }
     });
 
@@ -183,66 +204,42 @@ export const getDatosDashboard = async (periodoActual) => {
     let totalEsperadoGlobal = 0;
     let totalPagadoGlobal = 0;
 
+    // 5. PROCESAMIENTO MES POR MES
     mesesAEvaluar.forEach(mes => {
       ocupadas.forEach(u => {
         const inq = inqsMap[u.id_inquilino];
-        
-        // ⭐ VALIDAR SI EL INQUILINO TENÍA CONTRATO EN ESE MES
         const validacionContrato = inquilinoTeniaContratoEnPeriodo(inq, mes);
         
-        // Si no tenía contrato válido, saltar
-        if (!validacionContrato.activo) {
-          return;
-        }
-        
-        const pagoExistente = pagosLookup[`${u.id}_${mes}`];
+        if (!validacionContrato.activo) return;
+        if (condonadosSet.has(`${u.id}_${mes}`)) return; // Ignorar si está condonado
+
+        const registroMes = pagosLookup[`${u.id}_${mes}`];
         const rentaOriginal = Number(inq.renta_actual || u.renta_mensual || 0);
         
-        let pagado, pendiente, esperado, estatus;
+        const pagado = registroMes ? registroMes.monto_acumulado : 0;
+        const esperado = (registroMes && registroMes.total_esperado > 0) 
+                         ? registroMes.total_esperado 
+                         : rentaOriginal;
+        
+        const pendiente = Math.max(0, esperado - pagado);
 
-        if (pagoExistente) {
-          pagado = Number(pagoExistente.monto_pagado || 0);
-          esperado = Number(pagoExistente.total_esperado_periodo || rentaOriginal);
-          
-          pendiente = pagoExistente.saldo_restante_periodo !== undefined 
-            ? Number(pagoExistente.saldo_restante_periodo) 
-            : (esperado - pagado);
-          
-          estatus = pagoExistente.estatus || 'parcial';
-        } else {
-          // Verificar si existe pago condonado
-          const todosLosPagos = pSnap.docs.map(d => d.data());
-          const pagoCondonado = todosLosPagos.find(
-            p => p.id_unidad === u.id && p.periodo === mes && p.condonado === true
-          );
-          
-          if (pagoCondonado) {
-            return;
-          }
-          
-          pagado = 0;
-          esperado = rentaOriginal;
-          pendiente = rentaOriginal;
-          estatus = 'pendiente';
-        }
-
+        // Sumatoria para los cuadros de resumen
         totalEsperadoGlobal += esperado;
         totalPagadoGlobal += pagado;
 
+        // ⭐ SOLO agregar a la tabla si hay deuda real en ESTE mes específico
         if (pendiente > 0) {
           listaAdeudosDesglosada.push({
-            id: u.id,
+            id: `${u.id}_${mes}`,
             id_unidad: u.id,
-            id_inquilino: inq.id,
+            periodo: mes, 
             nombre: inq.nombre_completo,
             monto: pendiente,
-            saldo_restante_periodo: pendiente,
-            total_esperado_periodo: esperado,
             monto_pagado: pagado,
-            periodo: mes,
-            estatus: estatus,
-            dia_pago: inq.dia_pago || 5,
+            total_esperado_periodo: esperado,
+            estatus: pagado > 0 ? 'parcial' : 'pendiente',
             id_contrato: inq.id_contrato_actual || u.id_contrato_actual,
+            dia_pago: inq.dia_pago || 5,
             contratoFinalizado: validacionContrato.finalizado
           });
         }
@@ -259,17 +256,12 @@ export const getDatosDashboard = async (periodoActual) => {
       unidades: uSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        nombre_inquilino: inqsMap[doc.data().id_inquilino]?.nombre_completo || "Unidad Libre"
+        nombre_inquilino: inqsMap[doc.data().id_inquilino]?.nombre_completo || "Libre"
       })),
-      inquilinosMap: inqsMap // ⭐ Pasar el mapa completo al Dashboard
+      inquilinosMap: inqsMap
     };
   } catch (error) {
-    console.error("Error en getDatosDashboard:", error);
-    return { 
-      stats: { esperado: 0, pagado: 0, adeudo: 0 }, 
-      listaAdeudos: [], 
-      unidades: [],
-      inquilinosMap: {}
-    };
+    console.error("Error Dashboard:", error);
+    return { stats: { esperado: 0, pagado: 0, adeudo: 0 }, listaAdeudos: [], unidades: [], inquilinosMap: {} };
   }
 };

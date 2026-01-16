@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../firebase/config';
 import { 
   collection, onSnapshot, writeBatch, doc, 
-  setDoc, updateDoc, query, where, getDocs 
+  setDoc, updateDoc, query, where, getDocs, getDoc 
 } from 'firebase/firestore';
 
 const GestionPropiedades = () => {
@@ -13,7 +13,8 @@ const GestionPropiedades = () => {
     prefijo: '', // Nuevo campo
     limite_agua: 250,
     limite_luz: 250,
-    total_unidades: 0
+    total_unidades: 0,
+    renta_base: 0
   });
   const [cargando, setCargando] = useState(false);
 
@@ -37,7 +38,51 @@ const GestionPropiedades = () => {
 
   const propsActivas = propiedades.filter(p => p.estado !== "Inactiva");
   const propsInactivas = propiedades.filter(p => p.estado === "Inactiva");
+const handleUpdateUnidades = async (prop, nuevoTotal) => {
+    const totalActual = Number(prop.total_unidades);
+    const metaTotal = Number(nuevoTotal);
 
+    if (metaTotal <= totalActual) {
+      alert("Para reducir unidades o eliminarlas, favor de hacerlo desde el inventario individual por seguridad.");
+      return;
+    }
+
+    const confirmar = window.confirm(`Vas a agregar ${metaTotal - totalActual} unidades nuevas a "${prop.nombre}". ¿Continuar?`);
+    if (!confirmar) return;
+
+    setCargando(true);
+    try {
+      const batch = writeBatch(db);
+      
+      // 1. Crear las unidades faltantes
+      for (let i = totalActual + 1; i <= metaTotal; i++) {
+        const idUnidad = `${prop.prefijo}-${i}`;
+        const uRef = doc(db, 'unidades', idUnidad);
+        batch.set(uRef, {
+          id_unidad: idUnidad,
+          id_propiedad: prop.id,
+          no_depto: i.toString(),
+          estado: "Disponible",
+          id_inquilino: null,
+          id_contrato_actual: null,
+          nombre_inquilino: "",
+          renta_mensual: 0
+        });
+      }
+
+      // 2. Actualizar el conteo en el documento de la propiedad
+      const propRef = doc(db, 'propiedades', prop.id);
+      batch.update(propRef, { total_unidades: metaTotal });
+
+      await batch.commit();
+      alert(`✅ Se agregaron las unidades correctamente.`);
+    } catch (error) {
+      console.error(error);
+      alert("Error al actualizar unidades.");
+    } finally {
+      setCargando(false);
+    }
+  };
   // --- LÓGICA DE CLAUSURA (VALIDACIÓN POR PREFIJO) ---
   const handleClausurarPropiedad = async (prop) => {
     const confirmar = window.confirm(`¿Deseas clausurar "${prop.nombre.toUpperCase()}"?`);
@@ -120,21 +165,40 @@ const handleReactivarPropiedad = async (prop) => {
       }
     }
   };
-  const handleAgregar = async (e) => {
+const handleAgregar = async (e) => {
     e.preventDefault();
+    
+    // Validaciones básicas
     if (!nuevaProp.id || !nuevaProp.nombre || !nuevaProp.prefijo || nuevaProp.total_unidades <= 0) {
-      alert("Completa todos los campos, incluyendo el prefijo.");
+      alert("⚠️ Todos los campos son obligatorios.");
       return;
     }
 
     setCargando(true);
     try {
-      const batch = writeBatch(db);
-      const propRef = doc(db, 'propiedades', nuevaProp.id);
+      // 1. Verificar si el ID ya existe
+      const docRef = doc(db, 'propiedades', nuevaProp.id);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        alert("❌ Error: Ya existe una propiedad con ese ID.");
+        setCargando(false);
+        return;
+      }
 
-      // 1. Guardar Propiedad con ID interno
-      batch.set(propRef, {
-        id: nuevaProp.id, // Guardamos el ID también como campo
+      // 2. Verificar si el PREFIJO ya existe en otras propiedades
+      const prefijoExistente = propiedades.find(p => p.prefijo === nuevaProp.prefijo.toUpperCase());
+      if (prefijoExistente) {
+        alert(`❌ Error: El prefijo "${nuevaProp.prefijo}" ya está siendo usado por ${prefijoExistente.nombre}.`);
+        setCargando(false);
+        return;
+      }
+
+      const batch = writeBatch(db);
+
+      // 3. Crear Documento de Propiedad
+      batch.set(docRef, {
+        id: nuevaProp.id,
         nombre: nuevaProp.nombre,
         prefijo: nuevaProp.prefijo.toUpperCase().trim(),
         limite_agua: Number(nuevaProp.limite_agua),
@@ -144,7 +208,7 @@ const handleReactivarPropiedad = async (prop) => {
         fecha_creacion: new Date().toISOString()
       });
 
-      // 2. Crear Unidades
+      // 4. Crear Unidades Individuales
       for (let i = 1; i <= nuevaProp.total_unidades; i++) {
         const idUnidad = `${nuevaProp.prefijo.toUpperCase()}-${i}`;
         const uRef = doc(db, 'unidades', idUnidad);
@@ -154,6 +218,7 @@ const handleReactivarPropiedad = async (prop) => {
           no_depto: i.toString(),
           estado: "Disponible",
           id_inquilino: null,
+          id_contrato_actual: null,
           nombre_inquilino: "",
           renta_mensual: 0
         });
@@ -161,10 +226,15 @@ const handleReactivarPropiedad = async (prop) => {
 
       await batch.commit();
       setNuevaProp({ id: '', nombre: '', prefijo: '', limite_agua: 250, limite_luz: 250, total_unidades: 0 });
-      alert("✅ Propiedad y unidades creadas con éxito.");
-    } catch (error) { alert("Error al crear la propiedad."); } finally { setCargando(false); }
-  };
+      alert("🚀 ¡Propiedad y unidades creadas!");
 
+    } catch (error) {
+      console.error(error);
+      alert("Error al procesar la carga.");
+    } finally {
+      setCargando(false);
+    }
+  };
   const handleUpdateField = async (id, campo, valor) => {
     try {
       await updateDoc(doc(db, 'propiedades', id), { [campo]: Number(valor) });
@@ -237,7 +307,18 @@ const handleReactivarPropiedad = async (prop) => {
                   <td className="p-4 text-center">
                     <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">{prop.prefijo}</span>
                   </td>
-                  <td className="p-4 text-center text-sm font-bold text-gray-600">{prop.total_unidades}</td>
+              <td className="p-4 text-center">
+                    <input 
+                      type="number" 
+                      className="w-16 p-1 bg-gray-50 border border-gray-200 rounded text-center font-bold text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      defaultValue={prop.total_unidades} 
+                      onBlur={(e) => {
+                        if (Number(e.target.value) !== prop.total_unidades) {
+                          handleUpdateUnidades(prop, e.target.value);
+                        }
+                      }}
+                    />
+                  </td>
                   <td className="p-4 text-center space-x-2">
                     <input type="number" className="w-16 p-1 bg-blue-50 text-blue-700 rounded font-bold text-xs" defaultValue={prop.limite_agua} onBlur={(e) => handleUpdateField(prop.id, 'limite_agua', e.target.value)} />
                     <input type="number" className="w-16 p-1 bg-amber-50 text-amber-700 rounded font-bold text-xs" defaultValue={prop.limite_luz} onBlur={(e) => handleUpdateField(prop.id, 'limite_luz', e.target.value)} />
