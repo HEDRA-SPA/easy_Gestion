@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '../../firebase/config';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import ModalCondonacion from './ModalCondonacion';
 
-// ============================================
+/* ============================================
 // FUNCIÓN FIREBASE: Condonar deuda con estructura uniforme
 // ============================================
 export const condonarDeuda = async (adeudo, motivo) => {
@@ -65,89 +66,39 @@ export const condonarDeuda = async (adeudo, motivo) => {
     return { exito: false, error: error.message };
   }
 };
-
-// ============================================
-// UTILIDAD: Validar si inquilino tenía contrato activo en periodo
-// ============================================
-const inquilinoTeniaContratoEnPeriodo = (inquilino, periodo) => {
-  if (!inquilino) return { activo: false, finalizado: false };
-  
-  const [anioP, mesP] = periodo.split('-').map(Number);
-  // Normalizamos el periodo a evaluar: Año, Mes, Día 1
-  const fechaAuditoria = new Date(anioP, mesP - 1, 1).getTime();
-  
-  const hoy = new Date();
-
-  // Función interna para normalizar cualquier fecha al día 1
-  const normalizarADiaPrimero = (fecha) => {
-    if (!fecha) return null;
-    const d = fecha.toDate ? fecha.toDate() : new Date(fecha);
-    return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-  };
-
-  const validarRango = (fInicio, fFin) => {
-    const inicio = normalizarADiaPrimero(fInicio);
-    const fin = normalizarADiaPrimero(fFin);
-    
-    // Ahora comparamos solo Mes y Año (porque todos son Día 1)
-    if (fechaAuditoria >= inicio && fechaAuditoria <= fin) {
-      const contratoFinalizado = (fFin.toDate ? fFin.toDate() : new Date(fFin)) < hoy;
-      return { activo: true, finalizado: contratoFinalizado };
-    }
-    return null;
-  };
-
-  // 1. Validar Contrato Actual
-  if (inquilino.fecha_inicio_contrato && inquilino.fecha_fin_contrato) {
-    const resultado = validarRango(inquilino.fecha_inicio_contrato, inquilino.fecha_fin_contrato);
-    if (resultado) return resultado;
-  }
-  
-  // 2. Validar Historial
-  if (inquilino.historial_contratos && Array.isArray(inquilino.historial_contratos)) {
-    for (const contrato of inquilino.historial_contratos) {
-      const resultado = validarRango(contrato.fecha_inicio, contrato.fecha_fin);
-      if (resultado) return resultado;
-    }
-  }
-  
-  return { activo: false, finalizado: false };
-};
-
+*/
 const AdeudosTableConValidacion = ({ adeudos = [], periodo, modoFiltro, onCondonar }) => {
   const [adeudoACondonar, setAdeudoACondonar] = useState(null);
   const hoyReal = new Date();
 
-  // ⭐ LÓGICA SIMPLIFICADA: 
-  // getDatosDashboard ya nos manda los adeudos filtrados y sumados.
-  // Aquí solo nos aseguramos de no mostrar duplicados si acaso llegaran.
+  // Memoria para evitar duplicados y filtrar montos en 0
   const listaFiltrada = useMemo(() => {
     const mapaUnico = {};
     
     adeudos.forEach(item => {
       const key = `${item.id_unidad}-${item.periodo}`;
-      // Si hay duplicados por error de red/fetch, nos quedamos con el que tenga más info
       if (!mapaUnico[key] || (item.monto_pagado > mapaUnico[key].monto_pagado)) {
         mapaUnico[key] = item;
       }
     });
 
     return Object.values(mapaUnico)
-      .filter(item => item.monto > 0) // Solo los que realmente deben
-      .sort((a, b) => b.periodo.localeCompare(a.periodo)); // Ordenar por mes reciente
+      .filter(item => item.monto > 0)
+      .sort((a, b) => b.periodo.localeCompare(a.periodo));
   }, [adeudos]);
 
+  // Función corregida (Sin el error de anioAnio)
   const obtenerEstadoAdeudo = (item, diaPago, periodoItem) => {
     if (item.contratoFinalizado) {
       return { texto: 'CONTRATO FINALIZADO', clase: 'bg-purple-600 text-white animate-pulse' };
     }
 
-    // Si ya hay abonos, es parcial por definición
     if (item.monto_pagado > 0) {
       return { texto: 'PAGO PARCIAL', clase: 'bg-orange-500 text-white' };
     }
 
     const [anioItem, mesItem] = periodoItem.split('-').map(Number);
+    // Usamos anioItem correctamente aquí:
     const fechaItem = new Date(anioItem, mesItem - 1);
     const fechaActual = new Date(hoyReal.getFullYear(), hoyReal.getMonth());
 
@@ -195,7 +146,7 @@ const AdeudosTableConValidacion = ({ adeudos = [], periodo, modoFiltro, onCondon
             </thead>
             <tbody className="divide-y divide-gray-100">
               {listaFiltrada.length > 0 ? (
-                listaFiltrada.map((item, index) => {
+                listaFiltrada.map((item) => {
                   const estado = obtenerEstadoAdeudo(item, item.dia_pago || 5, item.periodo);
                   
                   return (
@@ -271,97 +222,6 @@ const AdeudosTableConValidacion = ({ adeudos = [], periodo, modoFiltro, onCondon
         />
       )}
     </>
-  );
-};
-
-// Modal de Condonación (placeholder)
-const ModalCondonacion = ({ adeudo, onConfirmar, onCancelar }) => {
-  const [motivo, setMotivo] = useState('');
-  const [procesando, setProcesando] = useState(false);
-
-  const handleCondonar = async () => {
-    if (!motivo.trim()) {
-      alert('Debes especificar un motivo para condonar');
-      return;
-    }
-    setProcesando(true);
-    await onConfirmar(motivo);
-    setProcesando(false);
-  };
-
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          <span className="text-3xl">🤝</span>
-          <div>
-            <h3 className="text-lg font-black text-gray-800 uppercase">Condonar Deuda</h3>
-            <p className="text-xs text-gray-500 mt-1">
-              Esta acción marca la deuda como condonada en el sistema
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-2">
-          <div className="flex justify-between items-center">
-            <span className="text-[9px] font-bold text-gray-500 uppercase">Unidad</span>
-            <span className="text-sm font-black text-gray-800">{adeudo.id_unidad}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-[9px] font-bold text-gray-500 uppercase">Inquilino</span>
-            <span className="text-sm font-black text-gray-800">{adeudo.nombre_completo}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-[9px] font-bold text-gray-500 uppercase">Periodo</span>
-            <span className="text-sm font-black text-blue-600">{adeudo.periodo}</span>
-          </div>
-          <div className="flex justify-between items-center pt-2 border-t border-red-300">
-            <span className="text-[9px] font-bold text-gray-500 uppercase">Saldo a condonar</span>
-            <span className="text-lg font-black text-red-600">
-              ${Number(adeudo.saldo_restante_periodo || 0).toLocaleString()}
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-[9px] font-bold text-gray-500 uppercase block">
-            Motivo de condonación *
-          </label>
-          <textarea
-            value={motivo}
-            onChange={(e) => setMotivo(e.target.value)}
-            placeholder="Ej: Contrato finalizado anticipadamente, acuerdo con inquilino..."
-            className="w-full px-4 py-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-            rows={3}
-            disabled={procesando}
-          />
-        </div>
-
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex gap-2">
-          <span className="text-lg">⚠️</span>
-          <p className="text-[10px] text-amber-800 font-medium leading-relaxed">
-            Se creará un registro de pago con estatus "condonado". La deuda dejará de aparecer en reportes activos.
-          </p>
-        </div>
-
-        <div className="flex gap-3 pt-2">
-          <button
-            onClick={onCancelar}
-            disabled={procesando}
-            className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-xl text-xs font-black uppercase hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleCondonar}
-            disabled={procesando || !motivo.trim()}
-            className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl text-xs font-black uppercase hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {procesando ? 'Procesando...' : 'Confirmar Condonación'}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 };
 
