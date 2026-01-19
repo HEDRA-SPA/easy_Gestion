@@ -2,57 +2,67 @@ import React, { useState } from 'react';
 import ModalEditarPago from './components/ModalEditarPago';
 import { eliminarPago } from '../firebase/paymentsService';
 
-const HistorialPagos = ({ pagos = [], onActualizar }) => {
+const HistorialPagos = ({ contrato, onActualizar }) => {
   const [pagoAEditar, setPagoAEditar] = useState(null);
   const [procesando, setProcesando] = useState(false);
-  const [eliminandoId, setEliminandoId] = useState(null);
 
-  const fCurrency = (monto) => `$${Number(monto || 0).toLocaleString()}`;
+  // 1. Extraer los datos con seguridad
+  const periodos = contrato?.periodos_esperados || [];
+
+  // Debug para consola (puedes borrarlo después de probar)
+  console.log("Datos del contrato recibidos:", contrato);
+
+  const fCurrency = (monto) => `$${Number(monto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
   
   const fFecha = (ts) => {
-    if (!ts) return "-";
+    if (!ts) return "---";
     const date = ts.toDate ? ts.toDate() : new Date(ts);
     return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
   };
+const handleEliminar = async (periodoData) => {
+  // periodoData es el objeto del map (el que tiene anio, mes, periodo, etc.)
+  const idPago = periodoData.id_pagos?.[0];
+  const idContrato = contrato.id; // El ID que rescatamos en el padre
+  const nombrePeriodo = periodoData.periodo; // ej: "2025-07"
 
-  const handleEliminar = async (pago) => {
-    const idPago = pago.id;
-    if (!idPago) return;
+  if (!idPago) return;
 
-    const mensaje = pago.estatus === 'condonado' 
-      ? `⚠️ ¿BORRAR CONDONACIÓN?\n\nSe eliminará el registro de perdón de deuda de ${pago.periodo}. La deuda volverá a aparecer en el Dashboard.`
-      : `⚠️ ¿BORRAR REGISTRO?\n\nSe eliminará el pago de ${pago.periodo}. El saldo volverá a aparecer como pendiente.`;
+  const confirmar = window.confirm(`¿Estás seguro de eliminar el pago de ${nombrePeriodo}?`);
 
-    const confirmar = window.confirm(mensaje);
-
-    if (confirmar) {
-      setProcesando(true);
-      setEliminandoId(idPago);
-
-      const resultado = await eliminarPago(idPago);
-      
-      if (resultado.exito) {
-        if (onActualizar) await onActualizar(); 
-      } else {
-        alert("❌ Error: " + resultado.error);
-        setEliminandoId(null);
-      }
-      setProcesando(false);
+  if (confirmar) {
+    setProcesando(true);
+    // Pasamos los 3 parámetros
+    const resultado = await eliminarPago(idPago, idContrato, nombrePeriodo);
+    
+    if (resultado.exito) {
+      if (onActualizar) await onActualizar();
+    } else {
+      alert("Error: " + resultado.error);
     }
-  };
+    setProcesando(false);
+  }
+};
 
-  const pagosOrdenados = [...pagos].sort((a, b) => {
-    const dateA = a.fecha_registro?.seconds || 0;
-    const dateB = b.fecha_registro?.seconds || 0;
-    return dateB - dateA;
+  // 2. Ordenar para que aparezca primero lo más nuevo
+  const periodosOrdenados = [...periodos].sort((a, b) => {
+    // Primero por año, luego por mes (descendente)
+    if (b.anio !== a.anio) return b.anio - a.anio;
+    return b.mes - a.mes;
   });
 
   return (
     <>
-      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all duration-500 ${procesando ? 'opacity-70' : ''}`}>
+      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50' : ''}`}>
         <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-          <h3 className="text-sm font-black text-gray-700 uppercase italic">Historial de Transacciones</h3>
-          <span className="text-[10px] font-bold text-gray-400">{pagos.length} Movimientos</span>
+          <div>
+            <h3 className="text-sm font-black text-gray-700 uppercase italic">Historial de Mensualidades</h3>
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">
+              Inquilino: {contrato?.nombre_inquilino || 'No especificado'}
+            </p>
+          </div>
+          <span className="bg-gray-200 text-gray-600 px-2 py-1 rounded text-[10px] font-black">
+            {periodos.length} PERIODOS
+          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -60,108 +70,71 @@ const HistorialPagos = ({ pagos = [], onActualizar }) => {
             <thead>
               <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b bg-white">
                 <th className="p-4">Periodo</th>
-                <th className="p-4">Monto</th>
-                <th className="p-4">Detalle / Motivo</th>
-                <th className="p-4">Fecha</th>
                 <th className="p-4">Estatus</th>
+                <th className="p-4">Monto Pagado</th>
+                <th className="p-4">Saldo Pendiente</th>
+                <th className="p-4">Último Mov.</th>
                 <th className="p-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
-              {pagosOrdenados.map((pago) => {
-                if (eliminandoId === pago.id) return null;
-
-                const isCondonado = pago.estatus === 'condonado';
-                const rowKey = pago.id || (pago.fecha_registro?.seconds + Math.random());
-                const excedente = (pago.total_esperado_periodo || 0) - (pago.monto_renta || 0);
-                const saldoRestante = pago.saldo_restante_periodo || 0;
+              {periodosOrdenados.map((item, index) => {
+                const tieneDeuda = item.saldo_restante > 0;
+                const esPagado = item.estatus === 'pagado';
+                const hasPagos = item.id_pagos && item.id_pagos.length > 0;
 
                 return (
-                  <tr key={rowKey} className={`hover:bg-blue-50/30 transition-colors animate-in fade-in duration-300 ${isCondonado ? 'bg-indigo-50/30' : ''}`}>
-                    <td className="p-4">
+                  <tr key={`${item.periodo}-${index}`} className="hover:bg-blue-50/50 transition-colors">
+                    <td className="p-4 font-black text-gray-700">
                       <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${
-                          isCondonado ? 'bg-indigo-500' : 
-                          pago.estatus === 'pagado' ? 'bg-green-500' : 'bg-amber-500'
-                        }`}></div>
-                        <span className="font-black text-gray-700 uppercase">{pago.periodo}</span>
+                        <span className={`w-2 h-2 rounded-full ${esPagado ? 'bg-green-500' : tieneDeuda ? 'bg-red-500' : 'bg-gray-300'}`}></span>
+                        {item.periodo}
                       </div>
                     </td>
-                    
                     <td className="p-4">
-                      <p className={`font-black text-sm ${isCondonado ? 'text-indigo-700' : 'text-green-700'}`}>
-                        {isCondonado ? fCurrency(pago.monto_condonado) : fCurrency(pago.monto_pagado)}
-                      </p>
-                      <p className="text-[9px] text-gray-400 uppercase font-bold">
-                        {isCondonado ? '🤝 Condonación' : pago.medio_pago}
-                      </p>
-                      {!isCondonado && pago.estatus === 'parcial' && saldoRestante > 0 && (
-                        <span className="mt-1 block text-[9px] font-black text-red-500 bg-red-50 px-1.5 py-0.5 rounded border border-red-100 w-fit">
-                          DEBE: {fCurrency(saldoRestante)}
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="p-4">
-                      {isCondonado ? (
-                        <div className="flex flex-col">
-                           <span className="text-[10px] text-indigo-600 font-bold italic">
-                            "{pago.motivo_condonacion || 'Sin motivo'}"
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-1 text-[10px]">
-                          <div className="flex gap-2 font-bold text-gray-500">
-                            <span>💧 {pago.servicios?.agua_lectura || 0}</span>
-                            <span>⚡ {pago.servicios?.luz_lectura || 0}</span>
-                          </div>
-                          {excedente > 0 && (
-                            <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded w-fit font-black">
-                              + {fCurrency(excedente)} EXCEDENTES
-                            </span>
-                          )}
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="p-4">
-                      <p className="font-bold text-gray-700">
-                        {isCondonado ? fFecha(pago.fecha_condonacion) : fFecha(pago.fecha_pago_realizado)}
-                      </p>
-                      <p className="text-[9px] text-gray-400 italic">Reg: {fFecha(pago.fecha_registro)}</p>
-                    </td>
-
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase shadow-sm ${
-                        isCondonado ? 'bg-indigo-600 text-white' :
-                        pago.estatus === 'pagado' ? 'bg-green-500 text-white' : 'bg-amber-400 text-white'
+                      <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                        esPagado ? 'bg-green-100 text-green-700' : 
+                        tieneDeuda ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
                       }`}>
-                        {pago.estatus}
+                        {item.estatus}
                       </span>
                     </td>
-
+                    <td className="p-4 font-bold text-gray-600">
+                      {fCurrency(item.monto_pagado)}
+                    </td>
                     <td className="p-4">
-                      <div className="flex items-center justify-center gap-2">
-                        {/* Solo permitir edición si NO es condonación */}
-                        {!isCondonado ? (
-                          <button
-                            onClick={() => setPagoAEditar(pago)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all shadow-sm active:scale-95"
-                          >
-                            ✏️
-                          </button>
+                      <span className={`font-black ${tieneDeuda ? 'text-red-600' : 'text-gray-400'}`}>
+                        {fCurrency(item.saldo_restante)}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <p className="font-bold">{fFecha(item.fecha_ultimo_pago)}</p>
+                      <p className="text-[9px] text-gray-400">Renta: {fCurrency(item.monto_esperado)}</p>
+                    </td>
+                    <td className="p-4">
+                      <div className="flex justify-center gap-2">
+                        {hasPagos ? (
+                          <>
+                            <button 
+                              onClick={() => setPagoAEditar({ 
+    ...item, 
+    id: item.id_pagos[0],
+    id_contrato: contrato.id // <--- AGREGA ESTA LÍNEA CLAVE
+  })}
+                              className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700 transition-all shadow-sm"
+                            >
+                              ✏️
+                            </button>
+                            <button 
+                              onClick={() => handleEliminar(item)}
+                              className="bg-red-50 text-red-600 p-1.5 rounded-lg border border-red-100 hover:bg-red-600 hover:text-white transition-all"
+                            >
+                              🗑️
+                            </button>
+                          </>
                         ) : (
-                          <div title="No se puede editar una condonación" className="bg-gray-100 text-gray-400 px-3 py-1.5 rounded-lg text-[10px] cursor-not-allowed border border-gray-200">
-                            🔒
-                          </div>
+                          <span className="text-[9px] font-bold text-gray-300 italic">Sin registros</span>
                         )}
-                        <button
-                          onClick={() => handleEliminar(pago)}
-                          disabled={procesando}
-                          className="bg-red-50 hover:bg-red-600 text-red-600 hover:text-white p-1.5 rounded-lg transition-all border border-red-100"
-                        >
-                          🗑️
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -169,12 +142,6 @@ const HistorialPagos = ({ pagos = [], onActualizar }) => {
               })}
             </tbody>
           </table>
-
-          {pagos.length === 0 && (
-            <div className="p-10 text-center text-gray-400 italic text-sm">
-              No hay movimientos registrados.
-            </div>
-          )}
         </div>
       </div>
 
