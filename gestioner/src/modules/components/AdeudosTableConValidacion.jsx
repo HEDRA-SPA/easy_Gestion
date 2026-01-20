@@ -6,22 +6,26 @@ import ModalCondonacion from './ModalCondonacion';
 const AdeudosTableConValidacion = ({ adeudos = [], periodo, modoFiltro, onCondonar }) => {
   const [adeudoACondonar, setAdeudoACondonar] = useState(null);
   const hoyReal = new Date();
+const listaFiltrada = useMemo(() => {
+  const mapaUnico = {};
+  
+  adeudos.forEach(item => {
+    const key = `${item.id_unidad}-${item.periodo}`;
+    // Si el item no tiene saldo_restante_periodo, usamos 'monto' como respaldo
+    const saldo = item.saldo_restante_periodo ?? item.monto ?? 0;
 
-  // Memoria para evitar duplicados y filtrar montos en 0
-  const listaFiltrada = useMemo(() => {
-    const mapaUnico = {};
-    
-    adeudos.forEach(item => {
-      const key = `${item.id_unidad}-${item.periodo}`;
-      if (!mapaUnico[key] || (item.monto_pagado > mapaUnico[key].monto_pagado)) {
-        mapaUnico[key] = item;
-      }
-    });
+    if (!mapaUnico[key] || (item.monto_pagado > mapaUnico[key].monto_pagado)) {
+      mapaUnico[key] = {
+        ...item,
+        saldo_restante_periodo: saldo // Aseguramos que este nombre siempre exista
+      };
+    }
+  });
 
-    return Object.values(mapaUnico)
-      .filter(item => item.monto > 0)
-      .sort((a, b) => b.periodo.localeCompare(a.periodo));
-  }, [adeudos]);
+  return Object.values(mapaUnico)
+    .filter(item => (item.saldo_restante_periodo > 0))
+    .sort((a, b) => b.periodo.localeCompare(a.periodo));
+}, [adeudos]);
 
   // Función corregida (Sin el error de anioAnio)
   const obtenerEstadoAdeudo = (item, diaPago, periodoItem) => {

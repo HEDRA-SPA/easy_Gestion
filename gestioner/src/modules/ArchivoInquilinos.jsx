@@ -23,14 +23,11 @@ const [mostrarModalRenovacion, setMostrarModalRenovacion] = useState(false);
     };
     cargarArchivo();
   }, []);
-
- // 2. Cargar periodos desde los contratos (en lugar de la colección pagos)
 useEffect(() => {
   const cargarPeriodosHistoricos = async () => {
     if (!inquilinoSeleccionado) return;
     setLoadingPagos(true);
     try {
-      // Consultamos todos los contratos de este inquilino
       const q = query(
         collection(db, "contratos"),
         where("id_inquilino", "==", inquilinoSeleccionado.id)
@@ -38,21 +35,35 @@ useEffect(() => {
       
       const snap = await getDocs(q);
       
-      // Extraemos y aplanamos todos los arrays 'periodos_esperados'
-      let todosLosPeriodos = [];
+      // Usaremos un Mapa para que el periodo sea la CLAVE ÚNICA
+      const mapaPeriodos = {};
+
       snap.docs.forEach(doc => {
         const data = doc.data();
         if (data.periodos_esperados) {
-          todosLosPeriodos = [...todosLosPeriodos, ...data.periodos_esperados];
+          data.periodos_esperados.forEach(p => {
+            const key = p.periodo;
+            
+            // LOGICA DE FILTRADO:
+            // 1. Si no existe el periodo en el mapa, lo agregamos.
+            // 2. Si ya existe pero el nuevo tiene estatus 'pagado', lo sobrescribimos.
+            // 3. Ignoramos los que no tengan monto esperado (basura de datos).
+            if (!mapaPeriodos[key] || (p.estatus === 'pagado' && mapaPeriodos[key].estatus !== 'pagado')) {
+              if (p.monto_esperado > 0) {
+                 mapaPeriodos[key] = p;
+              }
+            }
+          });
         }
       });
 
-      // Ordenar por periodo (más reciente primero)
-      todosLosPeriodos.sort((a, b) => b.periodo.localeCompare(a.periodo));
+      // Convertir el mapa de nuevo a un array y ordenar
+      const listaLimpia = Object.values(mapaPeriodos);
+      listaLimpia.sort((a, b) => b.periodo.localeCompare(a.periodo));
       
-      setPagosHistoricos(todosLosPeriodos);
+      setPagosHistoricos(listaLimpia);
     } catch (error) {
-      console.error("Error al cargar periodos del contrato:", error);
+      console.error("Error al cargar periodos:", error);
       setPagosHistoricos([]);
     } finally {
       setLoadingPagos(false);
@@ -179,13 +190,13 @@ useEffect(() => {
                         <th className="p-5">Monto Final</th>
                       </tr>
                     </thead>
-                    {/* Sustituye el cuerpo de tu tabla por este */}
-<tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-gray-50">
   {pagosHistoricos.map((periodo, index) => {
-    // Calculamos si hubo excedentes comparando lo pagado vs esperado 
-    // o simplemente mostramos los datos del mapa
+    const esPagado = periodo.estatus === 'pagado';
+    const esCondonado = periodo.metodo_condonacion === true;
+
     return (
-      <tr key={index} className="text-xs hover:bg-gray-50 transition-colors">
+      <tr key={`${periodo.periodo}-${index}`} className="text-xs hover:bg-gray-50 transition-colors">
         <td className="p-5 font-black text-blue-600">
           {periodo.periodo}
         </td>
@@ -193,29 +204,26 @@ useEffect(() => {
           ${Number(periodo.monto_esperado || 0).toLocaleString()}
         </td>
         <td className="p-5">
-          <span className={`px-2 py-1 rounded-md font-bold ${
-            periodo.estatus === 'pagado' 
-            ? 'bg-green-100 text-green-700' 
-            : 'bg-amber-100 text-amber-700'
+          <span className={`px-2 py-1 rounded-md font-black text-[9px] uppercase ${
+            esCondonado 
+              ? 'bg-purple-100 text-purple-700' 
+              : esPagado 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-amber-100 text-amber-700'
           }`}>
-            {periodo.estatus.toUpperCase()}
+            {esCondonado ? '🤝 CONDONADO' : periodo.estatus.toUpperCase()}
           </span>
         </td>
         <td className="p-5">
-          <span className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg font-black">
+          <span className={`px-3 py-1.5 rounded-lg font-black ${
+            esPagado || esCondonado ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-400'
+          }`}>
             ${Number(periodo.monto_pagado || 0).toLocaleString()}
           </span>
         </td>
       </tr>
     );
   })}
-  {pagosHistoricos.length === 0 && !loadingPagos && (
-    <tr>
-      <td colSpan="4" className="p-20 text-center text-gray-400 text-[10px] font-black uppercase italic tracking-widest">
-        No existen periodos registrados en el historial de contratos.
-      </td>
-    </tr>
-  )}
 </tbody>
                   </table>
                 </div>

@@ -1,6 +1,15 @@
 import { db } from './config'; 
-import { collection, getDocs, query, where, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-
+import { collection, 
+        getDocs, 
+        query, 
+        where, 
+        doc, 
+        addDoc, 
+        getDoc, 
+        updateDoc,
+        Timestamp, 
+        setDoc, 
+        serverTimestamp } from 'firebase/firestore';
 // ============================================
 // FUNCIÓN: Condonar deuda con estructura uniforme
 // ============================================
@@ -19,16 +28,15 @@ const limpiarDatos = (obj) => {
   });
   return nuevoObj;
 };
-
-// ============================================
-// CONDONAR DEUDA (ACTUALIZAR EN CONTRATO)
-// ============================================
 export const condonarDeuda = async (adeudo, motivo) => {
   try {
-    const idPago = `${adeudo.id_unidad}_${adeudo.periodo}_condonado`;
-    const pagoRef = doc(db, 'pagos', idPago);
-    
+    // 1. Generar el registro en la colección 'pagos' con UID automático
+    const pagosCol = collection(db, 'pagos');
     const [anio, mes] = adeudo.periodo.split('-').map(Number);
+    
+    const saldoACondonar = Number(adeudo.saldo_restante_periodo || 0);
+    const pagadoHastaAhora = Number(adeudo.monto_pagado || 0);
+    const totalEsperado = Number(adeudo.total_esperado_periodo || (saldoACondonar + pagadoHastaAhora));
 
     const dataCondonacion = {
       anio,
@@ -37,63 +45,75 @@ export const condonarDeuda = async (adeudo, motivo) => {
       id_unidad: adeudo.id_unidad,
       id_inquilino: adeudo.id_inquilino || '',
       id_contrato: adeudo.id_contrato || '',
-      monto_pagado: adeudo.monto_pagado || 0,
-      saldo_restante_periodo: 0,
-      total_esperado_periodo: adeudo.total_esperado_periodo || adeudo.saldo_restante_periodo,
+      monto_pagado: pagadoHastaAhora,
+      saldo_restante_periodo: 0, 
+      total_esperado_periodo: totalEsperado,
       estatus: 'condonado',
       medio_pago: 'condonacion',
       fecha_registro: serverTimestamp(),
-      fecha_pago_realizado: null,
-      servicios: adeudo.servicios || { agua_lectura: 250, luz_lectura: 250 },
+      servicios: adeudo.servicios || { agua_lectura: 0, luz_lectura: 0 },
       condonado: true,
       fecha_condonacion: serverTimestamp(),
       motivo_condonacion: motivo,
-      monto_condonado: adeudo.saldo_restante_periodo,
+      monto_condonado: saldoACondonar,
       estado_previo: {
-        saldo_antes: adeudo.saldo_restante_periodo,
-        pagado_antes: adeudo.monto_pagado,
-        estatus_antes: adeudo.estatus
+        saldo_antes: saldoACondonar,
+        pagado_antes: pagadoHastaAhora,
+        estatus_antes: adeudo.estatus || 'pendiente'
       }
     };
 
-    await setDoc(pagoRef, dataCondonacion, { merge: true });
+    const docRef = await addDoc(pagosCol, dataCondonacion);
+    const nuevoIdPago = docRef.id; // <--- Este es el UID que guardaremos en el contrato
 
-    // Actualizar periodo en contrato
+    // 2. Sincronizar con el array 'periodos_esperados' del contrato
     if (adeudo.id_contrato && adeudo.id_contrato !== "sin_contrato") {
       const contratoRef = doc(db, "contratos", adeudo.id_contrato);
       const contratoSnap = await getDoc(contratoRef);
       
       if (contratoSnap.exists()) {
         const contrato = contratoSnap.data();
-        const periodosEsperados = contrato.periodos_esperados || [];
+        const periodosEsperados = [...(contrato.periodos_esperados || [])];
         const indicePeriodo = periodosEsperados.findIndex(p => p.periodo === adeudo.periodo);
         
         if (indicePeriodo !== -1) {
+          const periodoActual = periodosEsperados[indicePeriodo];
+          
+          // Mantenemos el historial de IDs de pagos y agregamos el de condonación
+          const idsPrevios = periodoActual.id_pagos || [];
+          const nuevosIds = idsPrevios.includes(nuevoIdPago) 
+            ? idsPrevios 
+            : [...idsPrevios, nuevoIdPago];
+
           periodosEsperados[indicePeriodo] = {
-            ...periodosEsperados[indicePeriodo],
-            estatus: "condonado",
+            ...periodoActual,
+            estatus: "pagado", // ⭐ Lo marcamos como pagado para el flujo del sistema
+            monto_pagado: totalEsperado, // ⭐ El monto pagado ahora iguala al esperado
             saldo_restante: 0,
-            fecha_ultimo_pago: Timestamp.now()
+            fecha_ultimo_pago: Timestamp.now(),
+            id_pagos: nuevosIds, // ⭐ Guardamos el UID de Firebase aquí
+            metodo_condonacion: true // Marca informativa extra
           };
           
-          const periodosPagados = periodosEsperados.filter(
-            p => p.estatus === "pagado" || p.estatus === "condonado"
+          // Recalculamos cuántos periodos van pagados en total
+          const periodosPagadosCount = periodosEsperados.filter(
+            p => p.estatus === "pagado"
           ).length;
           
           await updateDoc(contratoRef, {
             periodos_esperados: periodosEsperados,
-            periodos_pagados: periodosPagados
+            periodos_pagados: periodosPagadosCount
           });
         }
       }
     }
 
-    console.log("✅ Deuda condonada:", idPago);
-    return { exito: true };
+    console.log("✅ Condonación completada y vinculada al contrato:", nuevoIdPago);
+    return { exito: true, id: nuevoIdPago };
 
   } catch (error) {
-    console.error("❌ Error al condonar deuda:", error);
-    return { exito: false, error: error.message };
+    console.error("❌ Error al condonar:", error);
+    return { exito: false, mensaje: error.message };
   }
 };
 // ============================================
