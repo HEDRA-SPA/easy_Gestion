@@ -228,7 +228,6 @@ const adeudosFiltrados = useMemo(() => {
         </div>
       )}
       
-      <GestionPropiedades/>
     </div>
   );
 };
