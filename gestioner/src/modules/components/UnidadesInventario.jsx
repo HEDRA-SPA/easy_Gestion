@@ -57,14 +57,30 @@ const UnidadesInventario = ({ onAsignarInquilino, onEditarInquilino, onRefrescar
   };
 
   const handleFinalizar = async (unidad) => {
-    if (window.confirm(`¿Finalizar contrato de ${unidad.nombre_inquilino}?`)) {
+    const { id, id_inquilino, id_contrato_actual, nombre_inquilino } = unidad;
+
+    if (!id_contrato_actual) {
+      alert("⚠️ Esta unidad no tiene un contrato vinculado.");
+      return;
+    }
+
+    const confirmar = window.confirm(`¿Confirmas la salida de ${nombre_inquilino}? \n\n- El contrato se archivará.\n- La unidad quedará disponible.`);
+    
+    if (confirmar) {
       setLoadingAction(true);
       try {
-        await finalizarContrato(unidad.id, unidad.id_inquilino);
-        alert("✅ Contrato finalizado.");
-        onRefrescar(); 
-      } catch (error) {
-        alert("❌ Error: " + error.message);
+        // ENVIAMOS LOS 3 DATOS CLAVE
+        const res = await finalizarContrato(id, id_inquilino, id_contrato_actual);
+        
+        if (res.exito) {
+          alert("✅ Contrato finalizado y unidad liberada con éxito.");
+          setExpandido(null);
+          if (onRefrescar) onRefrescar();
+        } else {
+          alert("❌ No se pudo finalizar: " + res.mensaje);
+        }
+      } catch (err) {
+        alert("❌ Error crítico: " + err.message);
       } finally {
         setLoadingAction(false);
       }

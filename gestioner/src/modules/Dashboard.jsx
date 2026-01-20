@@ -6,6 +6,7 @@ import AdeudosTableConValidacion from './components/AdeudosTableConValidacion';
 import { condonarDeuda } from '../firebase/consultas';
 import ArchivoInquilinos from './ArchivoInquilinos';
 import GestionPropiedades from './components/GestionPropiedades';
+import BarraBusqueda from './components/BarraBusqueda';
 
 // ⭐ Agregar inquilinosMap a los props
 const Dashboard = ({ 
@@ -21,12 +22,46 @@ const Dashboard = ({
   const [modoEdicion, setModoEdicion] = useState(false);
   const [vista, setVista] = useState('operacion');
   const [modoFiltro, setModoFiltro] = useState('mes');
+  const [busqueda, setBusqueda] = useState('');
   
   const [rangoFechas, setRangoFechas] = useState({
     inicio: typeof periodoActual === 'string' ? `${periodoActual}-01` : (periodoActual?.inicio || new Date().toISOString().split('T')[0]),
     fin: typeof periodoActual === 'string' ? `${periodoActual}-01` : (periodoActual?.fin || new Date().toISOString().split('T')[0])
   });
+const adeudosFiltrados = useMemo(() => {
+    if (!busqueda.trim()) return adeudos;
+    const term = busqueda.toLowerCase();
 
+    return adeudos.filter(a => {
+      // 1. Datos directos del adeudo
+      const nombreInq = (a.nombre || "").toLowerCase();
+      const idUnidad = (a.id_unidad || "").toLowerCase();
+      
+      // 2. Datos cruzados (si la propiedad viene en el objeto adeudo)
+      const nombreProp = (a.nombre_propiedad || "").toLowerCase();
+
+      return nombreInq.includes(term) || 
+             idUnidad.includes(term) || 
+             nombreProp.includes(term);
+    });
+  }, [adeudos, busqueda]);
+ const unidadesFiltradas = useMemo(() => {
+    if (!busqueda.trim()) return unidades;
+    const term = busqueda.toLowerCase();
+
+    return unidades.filter(u => {
+      const idUnidad = (u.id || "").toLowerCase();
+      const nombreProp = (u.nombre_propiedad || "").toLowerCase();
+      
+      // Buscamos en el nombre del inquilino usando el mapa que ya tenemos
+      const infoInquilino = inquilinosMap[u.id_inquilino];
+      const nombreInq = (infoInquilino?.nombre_completo || "").toLowerCase();
+      
+      return idUnidad.includes(term) || 
+             nombreProp.includes(term) || 
+             nombreInq.includes(term);
+    });
+  }, [unidades, busqueda, inquilinosMap]);
   useEffect(() => {
     const nuevoPeriodo = modoFiltro === 'mes' 
       ? rangoFechas.inicio.slice(0, 7) 
@@ -67,14 +102,18 @@ const Dashboard = ({
     }
   };
 
-  return (
+ return (
     <div className="p-6 max-w-7xl mx-auto space-y-8 font-sans">
       
-      {/* NAVEGACIÓN */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+      {/* NAVEGACIÓN Y BÚSQUEDA */}
+      <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-4">
         <h1 className="text-xl font-black text-gray-800 tracking-tighter uppercase italic">
           Gestioner <span className="text-blue-600 font-black">Pro</span>
         </h1>
+
+        {/* Componente Modular de Búsqueda */}
+        <BarraBusqueda busqueda={busqueda} setBusqueda={setBusqueda} />
+
         <div className="flex bg-gray-100 p-1 rounded-xl">
           <button onClick={() => setVista('operacion')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'operacion' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📊 Operación</button>
           <button onClick={() => setVista('archivo')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'archivo' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📁 Archivo</button>
@@ -83,7 +122,7 @@ const Dashboard = ({
 
       {vista === 'operacion' && (
         <>
-          {/* FILTROS AUTOMÁTICOS */}
+          {/* FILTROS DE FECHA */}
           <div className="flex flex-col md:flex-row gap-4 items-end bg-white p-4 rounded-2xl border border-gray-100 shadow-sm w-fit">
             <div className="flex flex-col gap-1">
               <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Visualización</span>
@@ -121,13 +160,17 @@ const Dashboard = ({
           {/* TABLAS POR MES */}
           <div className="space-y-12">
             {listaMeses.map((mes) => {
-              const adeudosMes = adeudos.filter(a => a.periodo === mes);
+              // ⭐ Filtramos del array ya filtrado por búsqueda
+              const adeudosMes = adeudosFiltrados.filter(a => a.periodo === mes);
+              
+              // Ocultar el periodo si la búsqueda no arroja resultados para ese mes
+              if (busqueda && adeudosMes.length === 0) return null;
+
               return (
                 <div key={mes} className="animate-in fade-in slide-in-from-bottom-2">
                   <div className="inline-block bg-gray-900 text-white px-5 py-1.5 rounded-t-xl text-[10px] font-black uppercase border-b-2 border-blue-500">
                     Periodo: {mes}
                   </div>
-                  {/* ⭐ Usar inquilinosMap correctamente */}
                   <AdeudosTableConValidacion 
                     adeudos={adeudosMes} 
                     periodo={mes} 
@@ -138,10 +181,18 @@ const Dashboard = ({
                 </div>
               );
             })}
+            
+            {/* Mensaje si la búsqueda en adeudos es vacía */}
+            {busqueda && adeudosFiltrados.length === 0 && (
+              <div className="text-center py-10 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 italic text-sm">
+                No se encontraron adeudos que coincidan con "{busqueda}"
+              </div>
+            )}
           </div>
 
+          {/* INVENTARIO (Con unidades filtradas) */}
           <UnidadesInventario 
-            unidades={unidades} 
+            unidades={unidadesFiltradas} 
             onAsignarInquilino={(u) => { setModoEdicion(false); setUnidadSeleccionada(u); }} 
             onEditarInquilino={(u) => { setModoEdicion(true); setUnidadSeleccionada(u); }} 
             onVerPagos={onVerPagos} 
@@ -155,11 +206,11 @@ const Dashboard = ({
 
       {vista === 'archivo' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <ArchivoInquilinos unidades={unidades} />
+          <ArchivoInquilinos unidades={unidadesFiltradas} />
         </div>
       )}
 
-      {/* MODAL */}
+      {/* MODAL FORMULARIO */}
       {unidadSeleccionada && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto bg-white rounded-3xl shadow-2xl">
@@ -176,6 +227,7 @@ const Dashboard = ({
           </div>
         </div>
       )}
+      
       <GestionPropiedades/>
     </div>
   );
