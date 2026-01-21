@@ -9,9 +9,6 @@ const HistorialPagos = ({ contrato, onActualizar }) => {
   // 1. Extraer los datos con seguridad
   const periodos = contrato?.periodos_esperados || [];
 
-  // Debug para consola (puedes borrarlo después de probar)
-  console.log("Datos del contrato recibidos:", contrato);
-
   const fCurrency = (monto) => `$${Number(monto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
   
   const fFecha = (ts) => {
@@ -19,40 +16,52 @@ const HistorialPagos = ({ contrato, onActualizar }) => {
     const date = ts.toDate ? ts.toDate() : new Date(ts);
     return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
   };
-const handleEliminar = async (periodoData) => {
-  // periodoData es el objeto del map (el que tiene anio, mes, periodo, etc.)
-  const idPago = periodoData.id_pagos?.[0];
-  const idContrato = contrato.id; // El ID que rescatamos en el padre
-  const nombrePeriodo = periodoData.periodo; // ej: "2025-07"
 
-  if (!idPago) return;
+  // --- ESTA ES LA FUNCIÓN QUE CORREGIMOS ---
+  const handleEliminar = async (periodoData) => {
+    // Extraemos todos los IDs (pueden ser uno o varios abonos)
+    const idsPagos = periodoData.id_pagos || []; 
+    const idContrato = contrato.id;
+    const nombrePeriodo = periodoData.periodo;
 
-  const confirmar = window.confirm(`¿Estás seguro de eliminar el pago de ${nombrePeriodo}?`);
-
-  if (confirmar) {
-    setProcesando(true);
-    // Pasamos los 3 parámetros
-    const resultado = await eliminarPago(idPago, idContrato, nombrePeriodo);
-    
-    if (resultado.exito) {
-      if (onActualizar) await onActualizar();
-    } else {
-      alert("Error: " + resultado.error);
+    if (idsPagos.length === 0) {
+      alert("No hay pagos registrados para este periodo.");
+      return;
     }
-    setProcesando(false);
-  }
-};
+
+    // Mensaje dinámico si hay más de un pago (abonos parciales)
+    const mensaje = idsPagos.length > 1 
+      ? `Este periodo tiene ${idsPagos.length} abonos detectados. ¿Deseas eliminar TODO el historial de ${nombrePeriodo}?`
+      : `¿Estás seguro de eliminar el pago de ${nombrePeriodo}?`;
+
+    if (window.confirm(mensaje)) {
+      setProcesando(true);
+      try {
+        // Enviamos el ARRAY de IDs al servicio de Firebase
+        const resultado = await eliminarPago(idsPagos, idContrato, nombrePeriodo);
+        
+        if (resultado.exito) {
+          if (onActualizar) await onActualizar();
+        } else {
+          alert("Error: " + resultado.error);
+        }
+      } catch (error) {
+        alert("Ocurrió un error inesperado");
+      } finally {
+        setProcesando(false);
+      }
+    }
+  };
 
   // 2. Ordenar para que aparezca primero lo más nuevo
   const periodosOrdenados = [...periodos].sort((a, b) => {
-    // Primero por año, luego por mes (descendente)
     if (b.anio !== a.anio) return b.anio - a.anio;
     return b.mes - a.mes;
   });
 
   return (
     <>
-      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50' : ''}`}>
+      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
           <div>
             <h3 className="text-sm font-black text-gray-700 uppercase italic">Historial de Mensualidades</h3>
@@ -73,7 +82,6 @@ const handleEliminar = async (periodoData) => {
                 <th className="p-4">Estatus</th>
                 <th className="p-4">Monto Pagado</th>
                 <th className="p-4">Saldo Pendiente</th>
-                <th className="p-4">Último Mov.</th>
                 <th className="p-4 text-center">Acciones</th>
               </tr>
             </thead>
@@ -99,38 +107,20 @@ const handleEliminar = async (periodoData) => {
                         {item.estatus}
                       </span>
                     </td>
-                    <td className="p-4 font-bold text-gray-600">
-                      {fCurrency(item.monto_pagado)}
-                    </td>
-                    <td className="p-4">
-                      <span className={`font-black ${tieneDeuda ? 'text-red-600' : 'text-gray-400'}`}>
-                        {fCurrency(item.saldo_restante)}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <p className="font-bold">{fFecha(item.fecha_ultimo_pago)}</p>
-                      <p className="text-[9px] text-gray-400">Renta: {fCurrency(item.monto_esperado)}</p>
-                    </td>
-                    <td className="p-4">
+                    <td className="p-4 font-bold text-gray-600">{fCurrency(item.monto_pagado)}</td>
+                    <td className="p-4 font-black text-red-600">{fCurrency(item.saldo_restante)}</td>
+                    <td className="p-4 text-center">
                       <div className="flex justify-center gap-2">
                         {hasPagos ? (
                           <>
                             <button 
-                              onClick={() => setPagoAEditar({ 
-    ...item, 
-    id: item.id_pagos[0],
-    id_contrato: contrato.id // <--- AGREGA ESTA LÍNEA CLAVE
-  })}
+                              onClick={() => setPagoAEditar({ ...item, id: item.id_pagos[0], id_contrato: contrato.id })}
                               className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700 transition-all shadow-sm"
-                            >
-                              ✏️
-                            </button>
+                            >✏️</button>
                             <button 
                               onClick={() => handleEliminar(item)}
                               className="bg-red-50 text-red-600 p-1.5 rounded-lg border border-red-100 hover:bg-red-600 hover:text-white transition-all"
-                            >
-                              🗑️
-                            </button>
+                            >🗑️</button>
                           </>
                         ) : (
                           <span className="text-[9px] font-bold text-gray-300 italic">Sin registros</span>

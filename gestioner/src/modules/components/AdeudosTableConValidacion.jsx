@@ -48,7 +48,7 @@ const listaFiltrada = useMemo(() => {
 
     const diaActual = hoyReal.getDate();
     return diaActual > diaPago ? 
-      { texto: 'VENCIDO', clase: 'bg-red-100 text-red-700 border-red-200' } : 
+      { texto: 'POR PAGAR', clase: 'bg-red-100 text-red-700 border-red-200' } : 
       { texto: 'POR VENCER', clase: 'bg-amber-100 text-amber-700 border-amber-200' };
   };
 

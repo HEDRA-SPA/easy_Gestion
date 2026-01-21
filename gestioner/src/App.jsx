@@ -4,13 +4,12 @@ import Dashboard from './modules/Dashboard';
 import SeccionPagosInquilino from './modules/SeccionPagosInquilino';
 import { LoadingScreen, ErrorScreen } from './atomics/Feedback'; 
 import { getDatosDashboard } from './firebase/consultas';
-import { auth } from './firebase/config'; // 👈 Asegúrate de importar auth
+import { auth } from './firebase/config';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import Login from './modules/components/Login';
 import GestionPropiedades from './modules/components/GestionPropiedades';
 
 function App() {
-  // --- 1. ESTADOS ---
   const [usuario, setUsuario] = useState(null);
   const [autenticando, setAutenticando] = useState(true);
   const [datos, setDatos] = useState({ 
@@ -25,9 +24,8 @@ function App() {
   const [seccionActiva, setSeccionActiva] = useState('dashboard');
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
 
-  // --- 2. LOGICA DE CARGA ---
+  // 🔥 Función simple para cargar datos
   const cargarTodo = useCallback(async (periodo) => {
-    // Solo cargamos si hay un usuario autenticado
     if (!auth.currentUser) return;
     
     try {
@@ -35,7 +33,7 @@ function App() {
       const respuesta = await getDatosDashboard(periodo);
       if (respuesta) {
         setDatos(respuesta);
-        if (typeof periodo === 'string') setPeriodoFiltro(periodo);
+        setPeriodoFiltro(periodo);
       }
     } catch (e) {
       console.error("Error al cargar dashboard:", e);
@@ -45,26 +43,20 @@ function App() {
     }
   }, []);
 
-  // --- 3. EFECTOS (Hooks de nivel superior) ---
-  
   // Escuchar cambios de sesión
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUsuario(user);
       setAutenticando(false);
+      
+      // 🔥 Cargar datos solo cuando el usuario inicia sesión
+      if (user) {
+        cargarTodo(new Date().toISOString().split('T')[0].slice(0, 7));
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [cargarTodo]);
 
-  // Cargar datos cuando el usuario entra o cambia el periodo
-  useEffect(() => {
-    if (usuario) {
-      cargarTodo(periodoFiltro);
-    }
-  }, [usuario, periodoFiltro, cargarTodo]);
-
-  // --- 4. RENDERIZADO CONDICIONAL ---
-  
   const cerrarSesion = () => signOut(auth);
 
   const renderContenido = () => {
@@ -100,14 +92,9 @@ function App() {
     }
   };
 
-  // --- 5. GESTIÓN DE PANTALLAS ---
-
   if (autenticando) return <LoadingScreen mensaje="Verificando sesión..." />;
-  
   if (!usuario) return <Login />;
-
   if (error) return <ErrorScreen mensaje="Error de conexión con la base de datos" />;
-
   if (cargando) return <LoadingScreen mensaje="Actualizando información..." />;
 
   return (
