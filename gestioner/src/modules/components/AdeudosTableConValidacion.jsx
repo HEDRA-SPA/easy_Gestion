@@ -26,30 +26,21 @@ const listaFiltrada = useMemo(() => {
     .filter(item => (item.saldo_restante_periodo > 0))
     .sort((a, b) => b.periodo.localeCompare(a.periodo));
 }, [adeudos]);
-
-  // Función corregida (Sin el error de anioAnio)
-  const obtenerEstadoAdeudo = (item, diaPago, periodoItem) => {
+const obtenerEstadoAdeudo = (item, diaPago, periodoItem) => {
     if (item.contratoFinalizado) {
       return { texto: 'CONTRATO FINALIZADO', clase: 'bg-purple-600 text-white animate-pulse' };
     }
 
-    if (item.monto_pagado > 0) {
-      return { texto: 'PAGO PARCIAL', clase: 'bg-orange-500 text-white' };
-    }
-
     const [anioItem, mesItem] = periodoItem.split('-').map(Number);
-    // Usamos anioItem correctamente aquí:
-    const fechaItem = new Date(anioItem, mesItem - 1);
-    const fechaActual = new Date(hoyReal.getFullYear(), hoyReal.getMonth());
-
-    if (fechaItem < fechaActual) {
-      return { texto: 'MOROSO', clase: 'bg-red-600 text-white animate-pulse' };
+    const fechaLimitePago = new Date(anioItem, mesItem - 1, diaPago);
+    
+    // Si ya pasó la fecha límite de pago -> VENCIDO
+    if (hoyReal > fechaLimitePago) {
+      return { texto: 'VENCIDO', clase: 'bg-red-600 text-white font-black animate-pulse' };
     }
-
-    const diaActual = hoyReal.getDate();
-    return diaActual > diaPago ? 
-      { texto: 'POR PAGAR', clase: 'bg-red-100 text-red-700 border-red-200' } : 
-      { texto: 'POR VENCER', clase: 'bg-amber-100 text-amber-700 border-amber-200' };
+    
+    // Si aún no llega la fecha límite -> POR PAGAR
+    return { texto: 'POR PAGAR', clase: 'bg-yellow-400 text-gray-900 font-black' };
   };
 
   return (

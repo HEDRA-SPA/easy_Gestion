@@ -16,7 +16,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     luz_lectura: 0,
     medio_pago: "transferencia",
     fecha_pago: new Date().toISOString().split('T')[0],
-    cobrar_excedentes_de: "deposito" // Nueva opción: "deposito" o "renta"
+    cobrar_excedentes_de: "deposito"
   });
 
   // Obtener límites de la propiedad
@@ -99,23 +99,47 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     };
 
     const pSel = formData.periodo.trim();
-    const pagosDeEsteMes = (pagosExistentes || []).filter(p => String(p.periodo || "").trim() === pSel);
-    const totalYaAbonado = pagosDeEsteMes.reduce((acc, curr) => acc + Number(curr.monto_pagado || 0), 0);
-    const registroOriginal = pagosDeEsteMes.find(p => Number(p.total_esperado_periodo) > 0);
+    
+    // Filtrar pagos de este periodo específico de la colección "pagos"
+    const pagosDeEsteMes = (pagosExistentes || []).filter(p => {
+      const periodoPago = String(p.periodo || "").trim();
+      return periodoPago === pSel;
+    });
 
-    if (registroOriginal) {
-      const esperado = Number(registroOriginal.total_esperado_periodo);
+    // Buscar en periodos_esperados del contrato
+    const periodoEnContrato = (contratoActivo?.periodos_esperados || []).find(p => {
+      return String(p.periodo || "").trim() === pSel;
+    });
+
+    console.log("🔍 Periodo seleccionado:", pSel);
+    console.log("📄 Pagos en colección 'pagos':", pagosDeEsteMes);
+    console.log("📋 Periodo en contrato:", periodoEnContrato);
+
+    // CASO 1: Hay pagos en la colección "pagos" → ABONO ADICIONAL
+    if (pagosDeEsteMes.length > 0) {
+      const primerPago = pagosDeEsteMes[0];
+      const totalYaAbonado = pagosDeEsteMes.reduce((acc, curr) => acc + Number(curr.monto_pagado || 0), 0);
+      const esperado = Number(primerPago.total_esperado_periodo || 0);
+      
+      const aguaOriginal = Number(primerPago.servicios?.agua_lectura || 0);
+      const luzOriginal = Number(primerPago.servicios?.luz_lectura || 0);
+
+      console.log("✅ ABONO ADICIONAL - Lecturas:", { aguaOriginal, luzOriginal });
+
       return {
         totalEsperado: esperado,
         abonado: totalYaAbonado,
         pendiente: Math.max(0, esperado - totalYaAbonado),
         existeRegistro: true,
-        aguaOriginal: registroOriginal.servicios?.agua_lectura || 0,
-        luzOriginal: registroOriginal.servicios?.luz_lectura || 0,
+        aguaOriginal: aguaOriginal,
+        luzOriginal: luzOriginal,
         excedentesAplicados: 0,
         depositoSuficiente: true
       };
-    } else {
+    }
+    
+    // CASO 2: NO hay pagos pero SÍ existe el periodo en periodos_esperados → PRIMER PAGO
+    else if (periodoEnContrato) {
       const rentaBase = Number(contratoActivo?.monto_renta || unidad?.renta_mensual || 0);
       const { totalExcedentes } = calcularExcedentes;
 
@@ -125,32 +149,47 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
 
       // Lógica según opción seleccionada
       if (formData.cobrar_excedentes_de === "deposito") {
-        // Cobrar del depósito
         if (totalExcedentes > 0) {
           if (depositoDisponible >= totalExcedentes) {
-            // Hay suficiente depósito, NO se suma a la renta
             excedentesAplicados = totalExcedentes;
             depositoSuficiente = true;
           } else {
-            // No hay suficiente depósito
             depositoSuficiente = false;
             excedentesAplicados = 0;
-            totalCalculado = rentaBase + totalExcedentes; // Se cobra todo de la renta
+            totalCalculado = rentaBase + totalExcedentes;
           }
         }
       } else {
-        // Cobrar de la renta (comportamiento original)
         totalCalculado = rentaBase + totalExcedentes;
         excedentesAplicados = 0;
       }
+
+      console.log("🆕 PRIMER PAGO - Inputs habilitados");
 
       return {
         totalEsperado: totalCalculado,
         abonado: 0,
         pendiente: totalCalculado,
         existeRegistro: false,
+        aguaOriginal: 0,
+        luzOriginal: 0,
         excedentesAplicados,
         depositoSuficiente
+      };
+    }
+    
+    // CASO 3: Periodo no existe ni en pagos ni en periodos_esperados (no debería pasar)
+    else {
+      console.log("⚠️ Periodo no encontrado en ningún lado");
+      return {
+        totalEsperado: 0,
+        abonado: 0,
+        pendiente: 0,
+        existeRegistro: false,
+        aguaOriginal: 0,
+        luzOriginal: 0,
+        excedentesAplicados: 0,
+        depositoSuficiente: true
       };
     }
   }, [formData.periodo, formData.agua_lectura, formData.luz_lectura, formData.cobrar_excedentes_de, 
@@ -195,8 +234,8 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         fecha_pago_realizado: formData.fecha_pago,
         fecha_registro: new Date(),
         servicios: {
-          agua_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura,
-          luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura,
+          agua_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : Number(formData.agua_lectura),
+          luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : Number(formData.luz_lectura),
           limite_agua_aplicado: limitesPropiedad.agua,
           limite_luz_aplicado: limitesPropiedad.luz,
           excedentes_cobrados_de: formData.cobrar_excedentes_de,
@@ -275,14 +314,14 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         {/* SECCIÓN LECTURAS */}
         <div className={`p-3 rounded-lg border-2 ${estadoFinancieroMes.existeRegistro ? 'bg-gray-100 border-gray-300' : 'bg-blue-50 border-blue-200'}`}>
           <p className="text-[10px] font-black text-blue-700 mb-2 uppercase italic text-center leading-none">
-            {estadoFinancieroMes.existeRegistro ? "Lecturas fijadas (Abono previo)" : "Ingresar lecturas del mes"}
+            {estadoFinancieroMes.existeRegistro ? "⚠️ Lecturas fijadas (Abono adicional)" : "💧 Ingresar lecturas del mes"}
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="relative">
               <span className="absolute left-2 top-2 text-[8px] font-bold text-blue-400 uppercase">Agua (Límite ${limitesPropiedad.agua})</span>
               <input 
                 type="number" 
-                className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
+                className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
                 value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura}
                 onChange={(e) => setFormData({...formData, agua_lectura: Number(e.target.value)})}
                 disabled={estadoFinancieroMes.existeRegistro}
@@ -292,7 +331,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
               <span className="absolute left-2 top-2 text-[8px] font-bold text-yellow-500 uppercase">Luz (Límite ${limitesPropiedad.luz})</span>
               <input 
                 type="number" 
-                className="p-3 pt-5 w-full border rounded font-black text-center text-lg"
+                className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
                 value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura}
                 onChange={(e) => setFormData({...formData, luz_lectura: Number(e.target.value)})}
                 disabled={estadoFinancieroMes.existeRegistro}

@@ -1,60 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ModalEditarPago from './components/ModalEditarPago';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { eliminarPago } from '../firebase/paymentsService';
 
 const HistorialPagos = ({ contrato, onActualizar }) => {
   const [pagoAEditar, setPagoAEditar] = useState(null);
+  const [pagosDetallados, setPagosDetallados] = useState({});
+  const [loading, setLoading] = useState(false);
   const [procesando, setProcesando] = useState(false);
 
-  // 1. Extraer los datos con seguridad
-  const periodos = contrato?.periodos_esperados || [];
+  useEffect(() => {
+    const cargarPagosIndividuales = async () => {
+      if (!contrato?.id) return;
+      setLoading(true);
+      try {
+        const pagosRef = collection(db, "pagos");
+        const q = query(pagosRef, where("id_contrato", "==", contrato.id));
+        const snapshot = await getDocs(q);
+        const pagosPorPeriodo = {};
+        snapshot.docs.forEach(doc => {
+          const datos = doc.data();
+          const periodo = datos.periodo;
+          if (!pagosPorPeriodo[periodo]) pagosPorPeriodo[periodo] = [];
+          pagosPorPeriodo[periodo].push({ id: doc.id, ...datos });
+        });
+        // IMPORTANTE: Ordenar los abonos por fecha de registro para saber cuál es el primero
+        Object.keys(pagosPorPeriodo).forEach(per => {
+          pagosPorPeriodo[per].sort((a, b) => a.fecha_registro?.seconds - b.fecha_registro?.seconds);
+        });
+        setPagosDetallados(pagosPorPeriodo);
+      } catch (error) {
+        console.error("Error cargando pagos:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    cargarPagosIndividuales();
+  }, [contrato?.id, contrato?.periodos_esperados]);
 
-  const fCurrency = (monto) => `$${Number(monto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-  
+  const handleEliminarIndividual = async (pago, esPrimerPago, todosLosPagosDelPeriodo) => {
+    // Si es el primer pago y hay más abonos, advertir sobre eliminación en cascada
+    if (esPrimerPago && todosLosPagosDelPeriodo.length > 1) {
+      const abonosPosteriores = todosLosPagosDelPeriodo.slice(1); // Todos excepto el primero
+      const totalAbonos = abonosPosteriores.reduce((sum, p) => sum + Number(p.monto_pagado || 0), 0);
+      
+      const msj = `⚠️ ADVERTENCIA: Este es el PRIMER PAGO del periodo ${pago.periodo}.
+
+Al eliminarlo, también se borrarán ${abonosPosteriores.length} abono(s) posterior(es) por un total de ${fCurrency(totalAbonos)}.
+
+Esto es necesario para mantener la coherencia de las lecturas de servicios y del depósito.
+
+¿Deseas continuar y eliminar TODOS los pagos de este periodo?`;
+      
+      if (!window.confirm(msj)) return;
+      
+      setProcesando(true);
+      
+      // Eliminar TODOS los pagos del periodo
+      const idsAEliminar = todosLosPagosDelPeriodo.map(p => p.id);
+      const resultado = await eliminarPago(idsAEliminar, contrato.id, pago.periodo);
+      
+      if (resultado.exito) {
+        if (onActualizar) await onActualizar();
+      } else {
+        alert("Error: " + resultado.error);
+      }
+      
+      setProcesando(false);
+    } 
+    // Si es un abono posterior, se puede eliminar solo
+    else {
+      const msj = `¿Estás seguro de eliminar este abono de ${fCurrency(pago.monto_pagado)}? 
+Esto afectará el saldo del periodo ${pago.periodo}.`;
+      
+      if (!window.confirm(msj)) return;
+      
+      setProcesando(true);
+      const resultado = await eliminarPago([pago.id], contrato.id, pago.periodo);
+      
+      if (resultado.exito) {
+        if (onActualizar) await onActualizar();
+      } else {
+        alert("Error: " + resultado.error);
+      }
+      
+      setProcesando(false);
+    }
+  };
+
+  const fCurrency = (monto) => `$${Number(monto || 0).toLocaleString('es-MX')}`;
   const fFecha = (ts) => {
     if (!ts) return "---";
     const date = ts.toDate ? ts.toDate() : new Date(ts);
-    return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: '2-digit' });
+    return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
   };
 
-  // --- ESTA ES LA FUNCIÓN QUE CORREGIMOS ---
-  const handleEliminar = async (periodoData) => {
-    // Extraemos todos los IDs (pueden ser uno o varios abonos)
-    const idsPagos = periodoData.id_pagos || []; 
-    const idContrato = contrato.id;
-    const nombrePeriodo = periodoData.periodo;
-
-    if (idsPagos.length === 0) {
-      alert("No hay pagos registrados para este periodo.");
-      return;
-    }
-
-    // Mensaje dinámico si hay más de un pago (abonos parciales)
-    const mensaje = idsPagos.length > 1 
-      ? `Este periodo tiene ${idsPagos.length} abonos detectados. ¿Deseas eliminar TODO el historial de ${nombrePeriodo}?`
-      : `¿Estás seguro de eliminar el pago de ${nombrePeriodo}?`;
-
-    if (window.confirm(mensaje)) {
-      setProcesando(true);
-      try {
-        // Enviamos el ARRAY de IDs al servicio de Firebase
-        const resultado = await eliminarPago(idsPagos, idContrato, nombrePeriodo);
-        
-        if (resultado.exito) {
-          if (onActualizar) await onActualizar();
-        } else {
-          alert("Error: " + resultado.error);
-        }
-      } catch (error) {
-        alert("Ocurrió un error inesperado");
-      } finally {
-        setProcesando(false);
-      }
-    }
-  };
-
-  // 2. Ordenar para que aparezca primero lo más nuevo
-  const periodosOrdenados = [...periodos].sort((a, b) => {
+  const periodosOrdenados = [...(contrato?.periodos_esperados || [])].sort((a, b) => {
     if (b.anio !== a.anio) return b.anio - a.anio;
     return b.mes - a.mes;
   });
@@ -62,72 +104,117 @@ const HistorialPagos = ({ contrato, onActualizar }) => {
   return (
     <>
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50 pointer-events-none' : ''}`}>
-        <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-          <div>
-            <h3 className="text-sm font-black text-gray-700 uppercase italic">Historial de Mensualidades</h3>
-            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">
-              Inquilino: {contrato?.nombre_inquilino || 'No especificado'}
-            </p>
+        {procesando && (
+          <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-10">
+            <div className="bg-white px-6 py-3 rounded-lg shadow-xl font-bold text-gray-700">
+              ⏳ Procesando...
+            </div>
           </div>
-          <span className="bg-gray-200 text-gray-600 px-2 py-1 rounded text-[10px] font-black">
-            {periodos.length} PERIODOS
-          </span>
-        </div>
+        )}
 
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+          <h3 className="text-white font-black text-lg uppercase tracking-tight">
+            📊 Historial de Pagos
+          </h3>
+          <p className="text-blue-100 text-xs font-medium">
+            Contrato: {contrato?.id || "---"}
+          </p>
+        </div>
+        
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b bg-white">
+              <tr className="text-[10px] font-black text-gray-400 uppercase border-b bg-white">
                 <th className="p-4">Periodo</th>
-                <th className="p-4">Estatus</th>
-                <th className="p-4">Monto Pagado</th>
-                <th className="p-4">Saldo Pendiente</th>
+                <th className="p-4">Detalle del Abono</th>
+                <th className="p-4">Fecha</th>
+                <th className="p-4">Extras</th>
                 <th className="p-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
-              {periodosOrdenados.map((item, index) => {
-                const tieneDeuda = item.saldo_restante > 0;
-                const esPagado = item.estatus === 'pagado';
-                const hasPagos = item.id_pagos && item.id_pagos.length > 0;
-
+              {periodosOrdenados.map((periodo, idx) => {
+                const pagosDelPeriodo = pagosDetallados[periodo.periodo] || [];
+                const tienePagos = pagosDelPeriodo.length > 0;
+                
                 return (
-                  <tr key={`${item.periodo}-${index}`} className="hover:bg-blue-50/50 transition-colors">
-                    <td className="p-4 font-black text-gray-700">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${esPagado ? 'bg-green-500' : tieneDeuda ? 'bg-red-500' : 'bg-gray-300'}`}></span>
-                        {item.periodo}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
-                        esPagado ? 'bg-green-100 text-green-700' : 
-                        tieneDeuda ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
-                      }`}>
-                        {item.estatus}
-                      </span>
-                    </td>
-                    <td className="p-4 font-bold text-gray-600">{fCurrency(item.monto_pagado)}</td>
-                    <td className="p-4 font-black text-red-600">{fCurrency(item.saldo_restante)}</td>
-                    <td className="p-4 text-center">
-                      <div className="flex justify-center gap-2">
-                        {hasPagos ? (
-                          <>
-                            <button 
-                              onClick={() => setPagoAEditar({ ...item, id: item.id_pagos[0], id_contrato: contrato.id })}
-                              className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700 transition-all shadow-sm"
-                            >✏️</button>
-                            <button 
-                              onClick={() => handleEliminar(item)}
-                              className="bg-red-50 text-red-600 p-1.5 rounded-lg border border-red-100 hover:bg-red-600 hover:text-white transition-all"
-                            >🗑️</button>
-                          </>
-                        ) : (
-                          <span className="text-[9px] font-bold text-gray-300 italic">Sin registros</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+                  <React.Fragment key={`${periodo.periodo}-${idx}`}>
+                    {/* Fila Resumen del Mes */}
+                    <tr className="bg-gray-50/80 border-l-4 border-l-blue-500">
+                      <td className="p-4 font-black text-gray-700">
+                        {periodo.periodo} 
+                        <span className="ml-2 text-[9px] text-gray-400 font-normal italic">
+                          (Renta: {fCurrency(periodo.monto_esperado)})
+                        </span>
+                      </td>
+                      <td className="p-4 font-bold text-blue-600">
+                        Pagado: {fCurrency(periodo.monto_pagado)}
+                      </td>
+                      <td colSpan="2" className="p-4 font-black text-red-600">
+                        Debe: {fCurrency(periodo.saldo_restante)}
+                      </td>
+                      <td className="p-4 text-center italic text-gray-400 text-[9px]">
+                        {periodo.estatus.toUpperCase()}
+                      </td>
+                    </tr>
+                    
+                    {/* Abonos Individuales */}
+                    {tienePagos && pagosDelPeriodo.map((pago, pagoIdx) => {
+                      const esPrimerPago = pagoIdx === 0;
+                      
+                      return (
+                        <tr key={pago.id} className="bg-white hover:bg-gray-50 transition border-b border-gray-50">
+                          <td className="pl-8 py-2 text-[10px] text-gray-400">
+                            {esPrimerPago ? (
+                              <span className="font-bold text-amber-600">⭐ Primer Pago</span>
+                            ) : (
+                              <span>└ Abono #{pagoIdx + 1}</span>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <span className="font-bold text-gray-700">{fCurrency(pago.monto_pagado)}</span>
+                            <span className="ml-2 text-[9px] text-gray-400 uppercase">({pago.medio_pago})</span>
+                          </td>
+                          <td className="py-2 text-gray-500">{fFecha(pago.fecha_pago_realizado)}</td>
+                          <td className="py-2">
+                            {pago.servicios?.excedentes_del_deposito > 0 && (
+                              <span className="text-purple-600 font-bold text-[9px]">
+                                -{fCurrency(pago.servicios.excedentes_del_deposito)} dep.
+                              </span>
+                            )}
+                            {esPrimerPago && (
+                              <div className="text-[8px] text-gray-400 mt-1">
+                                💧 Agua: {pago.servicios?.agua_lectura || 0} | 
+                                ⚡ Luz: {pago.servicios?.luz_lectura || 0}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-2">
+                            <div className="flex justify-center gap-2">
+                              <button 
+                                onClick={() => setPagoAEditar({
+                                  ...pago,
+                                  esPrimerPago: esPrimerPago,
+                                  id_contrato: contrato.id
+                                })}
+                                className="text-blue-600 hover:bg-blue-50 p-1 rounded transition"
+                                title="Editar Abono"
+                              >
+                                ✏️
+                              </button>
+                              <button 
+                                onClick={() => handleEliminarIndividual(pago, esPrimerPago, pagosDelPeriodo)}
+                                className={`${esPrimerPago ? 'text-red-700' : 'text-red-500'} hover:bg-red-50 p-1 rounded transition`}
+                                title={esPrimerPago ? "⚠️ Eliminar TODOS los pagos del periodo" : "Eliminar Abono"}
+                              >
+                                {esPrimerPago ? '🗑️⚠️' : '🗑️'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -138,6 +225,7 @@ const HistorialPagos = ({ contrato, onActualizar }) => {
       {pagoAEditar && (
         <ModalEditarPago 
           pago={pagoAEditar}
+          esPrimerPago={pagoAEditar.esPrimerPago}
           onCerrar={() => setPagoAEditar(null)}
           onExito={() => {
             setPagoAEditar(null);

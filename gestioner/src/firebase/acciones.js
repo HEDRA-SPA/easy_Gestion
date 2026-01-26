@@ -403,7 +403,7 @@ export const renovarInquilinoDesdeArchivo = async (idInquilino, idUnidad, datosN
   await batch.commit();
 };
 // ============================================
-// ACTUALIZAR INQUILINO (REGENERAR PERIODOS SI CAMBIAN FECHAS)
+// ACTUALIZAR INQUILINO (CON VALIDACIONES ESTRICTAS)
 // ============================================
 export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
   const batch = writeBatch(db);
@@ -411,14 +411,18 @@ export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
   const uniRef = doc(db, "unidades", idUnidad);
 
   const idContratoActivo = datos.id_contrato_actual;
-  
+  const nuevaRenta = Number(datos.renta_actual);
+  const nuevoDiaPago = Number(datos.dia_pago);
+  const nuevoDeposito = Number(datos.deposito_garantia_inicial);
+
+  // 1. Datos del Inquilino
   const inqData = {
     nombre_completo: datos.nombre_completo,
     telefono_contacto: datos.telefono_contacto,
     telefono_emergencia: datos.telefono_emergencia || "",
-    deposito_garantia_inicial: Number(datos.deposito_garantia_inicial),
-    dia_pago: Number(datos.dia_pago),
-    renta_actual: Number(datos.renta_actual),
+    deposito_garantia_inicial: nuevoDeposito,
+    dia_pago: nuevoDiaPago,
+    renta_actual: nuevaRenta,
     no_personas: Number(datos.no_personas) || 1,
     acompanantes: datos.acompanantes || [],
     docs: datos.docs || {},
@@ -427,15 +431,16 @@ export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
     ultima_modificacion: serverTimestamp()
   };
 
+  // 2. Datos de la Unidad
   const uniData = {
     nombre_inquilino: datos.nombre_completo,
-    renta_mensual: Number(datos.renta_actual)
+    renta_mensual: nuevaRenta
   };
 
   batch.update(inqRef, inqData);
   batch.update(uniRef, uniData);
 
-  // Si hay contrato, actualizar y REGENERAR periodos
+  // 3. Actualización de Contrato y Periodos (CON VALIDACIONES ESTRICTAS)
   if (idContratoActivo) {
     const contratoRef = doc(db, "contratos", idContratoActivo);
     const contratoSnap = await getDoc(contratoRef);
@@ -445,29 +450,86 @@ export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
       const fechaInicio = new Date(datos.fecha_inicio_contrato + "T12:00:00");
       const fechaFin = new Date(datos.fecha_fin_contrato + "T12:00:00");
       
-      // Regenerar periodos SOLO si cambiaron las fechas
       const fechaInicioActual = contratoActual.fecha_inicio.toDate();
       const fechaFinActual = contratoActual.fecha_fin.toDate();
+      const rentaAnterior = contratoActual.monto_renta;
+      const depositoAnterior = contratoActual.monto_deposito;
       
-      let nuevosPeriodos = contratoActual.periodos_esperados;
-      
-      if (fechaInicio.getTime() !== fechaInicioActual.getTime() || 
-          fechaFin.getTime() !== fechaFinActual.getTime()) {
-        
-        // Mantener el estado de periodos existentes
-        const periodosAntiguos = contratoActual.periodos_esperados || [];
-        nuevosPeriodos = generarPeriodosEsperados(fechaInicio, fechaFin, datos.renta_actual);
-        
-        // Preservar estados de periodos ya pagados/parciales
-        nuevosPeriodos = nuevosPeriodos.map(nuevo => {
-          const existente = periodosAntiguos.find(p => p.periodo === nuevo.periodo);
-          return existente || nuevo;
+      let nuevosPeriodos = contratoActual.periodos_esperados || [];
+
+      // 🚨 VERIFICAR SI HAY PAGOS REGISTRADOS (para validaciones críticas)
+      const periodosConPagos = contratoActual.periodos_esperados.filter(p => 
+        p.estatus === "pagado" || p.estatus === "parcial" || p.monto_pagado > 0
+      );
+      const hayPagosRegistrados = periodosConPagos.length > 0;
+
+      // ⚠️ VALIDACIÓN 1: Detectar si cambiaron las fechas
+      const cambiaronFechas = 
+        fechaInicio.getTime() !== fechaInicioActual.getTime() || 
+        fechaFin.getTime() !== fechaFinActual.getTime();
+
+      if (cambiaronFechas && hayPagosRegistrados) {
+        return {
+          success: false,
+          error: "NO_SE_PUEDE_MODIFICAR_FECHAS",
+          message: `No se pueden modificar las fechas del contrato porque ya existen ${periodosConPagos.length} periodo(s) con pagos registrados.`,
+          detalles: {
+            periodos_afectados: periodosConPagos.map(p => ({
+              periodo: p.periodo,
+              estatus: p.estatus,
+              monto_pagado: p.monto_pagado,
+              id_pagos: p.id_pagos
+            })),
+            sugerencia: "Elimina primero todos los pagos registrados si realmente necesitas cambiar las fechas del contrato."
+          }
+        };
+      }
+
+      // ⚠️ VALIDACIÓN 2: Detectar si cambiaron el DEPÓSITO
+      const cambioDeposito = nuevoDeposito !== depositoAnterior;
+
+      if (cambioDeposito && hayPagosRegistrados) {
+        return {
+          success: false,
+          error: "NO_SE_PUEDE_MODIFICAR_DEPOSITO",
+          message: `No se puede modificar el depósito porque ya existen ${periodosConPagos.length} periodo(s) con pagos registrados.`,
+          detalles: {
+            deposito_actual: depositoAnterior,
+            deposito_intentado: nuevoDeposito,
+            periodos_afectados: periodosConPagos.map(p => ({
+              periodo: p.periodo,
+              estatus: p.estatus,
+              monto_pagado: p.monto_pagado
+            })),
+            sugerencia: "El depósito puede haber sido afectado por cobros de excedentes de servicios. Elimina todos los pagos antes de modificarlo."
+          }
+        };
+      }
+
+      // ✅ NO HAY PAGOS - PERMITIR CAMBIOS DE FECHAS Y REGENERAR
+      if (cambiaronFechas && !hayPagosRegistrados) {
+        nuevosPeriodos = generarPeriodosEsperados(fechaInicio, fechaFin, nuevaRenta);
+        console.log("✅ Fechas modificadas y periodos regenerados (sin pagos previos)");
+      }
+
+      // ACTUALIZACIÓN DE MONTOS EN PERIODOS PENDIENTES: Solo si NO cambiaron fechas
+      if (!cambiaronFechas && nuevaRenta !== rentaAnterior) {
+        nuevosPeriodos = nuevosPeriodos.map(p => {
+          if (p.estatus === "pendiente") {
+            return {
+              ...p,
+              monto_esperado: nuevaRenta,
+              saldo_restante: nuevaRenta
+            };
+          }
+          return p; // Respeta periodos pagados o parciales
         });
       }
       
       batch.update(contratoRef, {
-        monto_renta: Number(datos.renta_actual),
-        monto_deposito: Number(datos.deposito_garantia_inicial),
+        monto_renta: nuevaRenta,
+        monto_deposito: nuevoDeposito, // Solo se actualiza si NO hay pagos
+        dia_pago: nuevoDiaPago,
         fecha_inicio: Timestamp.fromDate(fechaInicio),
         fecha_fin: Timestamp.fromDate(fechaFin),
         nombre_inquilino: datos.nombre_completo,
@@ -480,7 +542,6 @@ export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
   await batch.commit();
   return { success: true };
 };
-
 /**
  * Obtiene el historial de pagos de un inquilino.
  * @param {string} idInquilino - El ID único del inquilino.
