@@ -3,9 +3,15 @@ import StatCard from './components/StatCard';
 import UnidadesInventario from './components/UnidadesInventario';
 import FormularioNuevoInquilino from './components/FormularioNuevoInquilino';
 import AdeudosTableConValidacion from './components/AdeudosTableConValidacion';
+import EstadoCuenta from './components/EstadoCuenta';
 import { condonarDeuda } from '../firebase/consultas';
 import ArchivoInquilinos from './ArchivoInquilinos';
 import GestionPropiedades from './components/GestionPropiedades';
+import MantenimientoForm from './components/MantenimientoForm';
+import MantenimientoLista from './components/MantenimientoLista';
+import ServiciosDashboard from './components/ServiciosDashboard';
+import ServiciosPagoDetalle from './components/ServiciosPagoDetalle';
+import ReporteFinancieroGlobal from './components/Reportefinancieroglobal';
 
 const Dashboard = ({ 
   resumen, 
@@ -78,7 +84,13 @@ const Dashboard = ({
         </h1>
         <div className="flex bg-gray-100 p-1 rounded-xl">
           <button onClick={() => setVista('operacion')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'operacion' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📊 Operación</button>
+          <button onClick={() => setVista('estado-cuenta')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'estado-cuenta' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📄 Estado Cuenta</button>
           <button onClick={() => setVista('archivo')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'archivo' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📁 Archivo</button>
+          <button onClick={() => setVista('mantenimiento-form')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'mantenimiento-form' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>🔧 Nuevo Mant.</button>
+          <button onClick={() => setVista('mantenimiento-lista')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'mantenimiento-lista' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>📋 Historial</button>
+          <button onClick={() => setVista('servicios-dashboard')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'servicios-dashboard' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>💧 Servicios</button>
+          <button onClick={() => setVista('servicios-detalle')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'servicios-detalle' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>🔍 Detalle Serv.</button>
+          <button onClick={() => setVista('reporte-financiero')} className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${vista === 'reporte-financiero' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'}`}>💰 Reporte Fin.</button>
         </div>
       </div>
 
@@ -168,9 +180,54 @@ const Dashboard = ({
         </>
       )}
 
+      {vista === 'estado-cuenta' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <EstadoCuenta 
+            unidades={unidades}
+            inquilinosMap={inquilinosMap}
+            refrescar={handleBuscar}
+          />
+        </div>
+      )}
+
       {vista === 'archivo' && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <ArchivoInquilinos unidades={unidades} />
+        </div>
+      )}
+
+      {vista === 'mantenimiento-form' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MantenimientoForm 
+            onSuccess={() => {
+              handleBuscar();
+              setVista('mantenimiento-lista');
+            }}
+          />
+        </div>
+      )}
+
+      {vista === 'mantenimiento-lista' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <MantenimientoLista />
+        </div>
+      )}
+
+      {vista === 'servicios-dashboard' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <ServiciosDashboard />
+        </div>
+      )}
+
+      {vista === 'servicios-detalle' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <ServiciosPagoDetalle />
+        </div>
+      )}
+
+      {vista === 'reporte-financiero' && (
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <ReporteFinancieroGlobal />
         </div>
       )}
 

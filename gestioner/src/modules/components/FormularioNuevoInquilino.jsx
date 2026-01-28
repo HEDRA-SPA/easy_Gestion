@@ -110,14 +110,23 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         resultado = await registrarNuevoInquilino(unidad.id, formData);
       }
 
-      if (resultado && !resultado.success) {
-        if (resultado.error === "NO_SE_PUEDE_MODIFICAR_FECHAS" || resultado.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO") {
-          setErrorValidacion(resultado);
-          return;
-        }
-        throw new Error(resultado.message || "Error desconocido");
+      // Si hay error de validación específico, mostrarlo
+      if (resultado && resultado.error === "NO_SE_PUEDE_MODIFICAR_FECHAS") {
+        setErrorValidacion(resultado);
+        return;
+      }
+      
+      if (resultado && resultado.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO") {
+        setErrorValidacion(resultado);
+        return;
       }
 
+      // Si resultado tiene success: false Y tiene un mensaje de error, lanzar excepción
+      if (resultado && resultado.success === false && resultado.message) {
+        throw new Error(resultado.message);
+      }
+
+      // En cualquier otro caso (success: true, o sin propiedad success), considerar éxito
       alert("✅ Guardado correctamente");
       onExito();
     } catch (error) {
