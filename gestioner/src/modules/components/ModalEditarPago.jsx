@@ -68,118 +68,126 @@ const ModalEditarPago = ({ pago, esPrimerPago, onCerrar, onExito }) => {
     const a = Math.max(0, formData.agua_lectura - formData.limite_agua_aplicado);
     const l = Math.max(0, formData.luz_lectura - formData.limite_luz_aplicado);
     return { total: a + l };
-  }, [formData.agua_lectura, formData.luz_lectura, formData.limite_agua_aplicado]);
-const handleGuardar = async () => {
-  if (formData.monto_pagado <= 0) return alert("Monto inválido");
+  }, [formData.agua_lectura, formData.luz_lectura, formData.limite_agua_aplicado, formData.limite_luz_aplicado]);
 
-  setLoading(true);
-  try {
-    const contratoRef = doc(db, "contratos", pago.id_contrato);
-    const pagoRef = doc(db, "pagos", pago.id);
-    
-    // 1. Obtener datos frescos de TODO lo involucrado
-    const [cSnap, pSnap] = await Promise.all([
-      getDoc(contratoRef),
-      getDocs(query(collection(db, "pagos"), where("id_contrato", "==", pago.id_contrato), where("periodo", "==", pago.periodo)))
-    ]);
+  const handleGuardar = async () => {
+    if (formData.monto_pagado <= 0) return alert("Monto inválido");
 
-    const cData = cSnap.data();
-    const todosLosPagosDocs = pSnap.docs;
-
-    // 2. Calcular el nuevo escenario de servicios (Solo si es el primer pago)
-    let nuevoTotalEsperado = rentaBaseContrato;
-    let nuevoDescuentoDep = 0;
-    let montoFinalDeposito = depositoDisponible;
-
-    if (esPrimerPago) {
-      // Restauramos depósito sumando lo que este pago específico tenía descontado antes
-      const anteriorDescuento = Number(datosPagoReal.servicios?.excedentes_del_deposito || 0);
-      const depRestaurado = depositoDisponible + anteriorDescuento;
+    setLoading(true);
+    try {
+      const contratoRef = doc(db, "contratos", pago.id_contrato);
+      const pagoRef = doc(db, "pagos", pago.id);
       
-      if (formData.cobrar_excedentes_de === 'deposito') {
-        montoFinalDeposito = depRestaurado - excedentes.total;
-        nuevoDescuentoDep = excedentes.total;
-        nuevoTotalEsperado = rentaBaseContrato; 
+      // 1. Obtener datos frescos de TODO lo involucrado
+      const [cSnap, pSnap] = await Promise.all([
+        getDoc(contratoRef),
+        getDocs(query(collection(db, "pagos"), where("id_contrato", "==", pago.id_contrato), where("periodo", "==", pago.periodo)))
+      ]);
+
+      const cData = cSnap.data();
+      const todosLosPagosDocs = pSnap.docs;
+
+      // 2. Calcular el nuevo escenario de servicios (Solo si es el primer pago)
+      let nuevoTotalEsperado = rentaBaseContrato;
+      let nuevoDescuentoDep = 0;
+      let montoFinalDeposito = depositoDisponible;
+
+      if (esPrimerPago) {
+        // Restauramos depósito sumando lo que este pago específico tenía descontado antes
+        const anteriorDescuento = Number(datosPagoReal.servicios?.excedentes_del_deposito || 0);
+        const depRestaurado = depositoDisponible + anteriorDescuento;
+        
+        if (formData.cobrar_excedentes_de === 'deposito') {
+          montoFinalDeposito = depRestaurado - excedentes.total;
+          nuevoDescuentoDep = excedentes.total;
+          nuevoTotalEsperado = rentaBaseContrato; 
+        } else {
+          montoFinalDeposito = depRestaurado;
+          nuevoTotalEsperado = rentaBaseContrato + excedentes.total;
+        }
       } else {
-        montoFinalDeposito = depRestaurado;
-        nuevoTotalEsperado = rentaBaseContrato + excedentes.total;
+        // Si no es el primero, el total esperado es el que ya tiene el periodo en el contrato
+        const periodoInfo = cData.periodos_esperados.find(p => p.periodo === pago.periodo);
+        nuevoTotalEsperado = periodoInfo?.monto_esperado || rentaBaseContrato;
       }
-    } else {
-      // Si no es el primero, el total esperado es el que ya tiene el periodo en el contrato
-      const periodoInfo = cData.periodos_esperados.find(p => p.periodo === pago.periodo);
-      nuevoTotalEsperado = periodoInfo?.monto_esperado || rentaBaseContrato;
-    }
 
-    // 3. CALCULO CRÍTICO: Sumar todos los abonos existentes reemplazando el que estamos editando
-    const sumaOtrosAbonos = todosLosPagosDocs
-      .filter(doc => doc.id !== pago.id)
-      .reduce((acc, doc) => acc + Number(doc.data().monto_pagado || 0), 0);
+      // 3. CALCULO CRÍTICO: Sumar todos los abonos existentes reemplazando el que estamos editando
+      const sumaOtrosAbonos = todosLosPagosDocs
+        .filter(doc => doc.id !== pago.id)
+        .reduce((acc, doc) => acc + Number(doc.data().monto_pagado || 0), 0);
 
-    const nuevoTotalPagadoAcumulado = sumaOtrosAbonos + formData.monto_pagado;
-    const nuevoSaldoGlobal = Math.max(0, nuevoTotalEsperado - nuevoTotalPagadoAcumulado);
-    const nuevoEstatusGlobal = nuevoSaldoGlobal <= 0 ? "pagado" : "parcial";
+      const nuevoTotalPagadoAcumulado = sumaOtrosAbonos + formData.monto_pagado;
+      const nuevoSaldoGlobal = Math.max(0, nuevoTotalEsperado - nuevoTotalPagadoAcumulado);
+      const nuevoEstatusGlobal = nuevoSaldoGlobal <= 0 ? "pagado" : "parcial";
 
-    // 4. ACTUALIZACIÓN EN LOTE (Batch) para coherencia total
-    // Actualizar Contrato
-    const nuevosPeriodosArr = cData.periodos_esperados.map(p => {
-      if (p.periodo === pago.periodo) {
-        return {
-          ...p,
-          monto_pagado: nuevoTotalPagadoAcumulado,
-          monto_esperado: nuevoTotalEsperado,
-          saldo_restante: nuevoSaldoGlobal,
-          estatus: nuevoEstatusGlobal
-        };
-      }
-      return p;
-    });
-
-    await updateDoc(contratoRef, {
-      monto_deposito: montoFinalDeposito,
-      periodos_esperados: nuevosPeriodosArr,
-      periodos_pagados: nuevosPeriodosArr.filter(p => p.estatus === "pagado").length
-    });
-
-    // 5. Sincronizar TODOS los documentos de pago de este periodo
-    const promesasPagos = todosLosPagosDocs.map(pDoc => {
-      const isEditingThisOne = pDoc.id === pago.id;
-      
-      const updateData = {
-        total_esperado_periodo: nuevoTotalEsperado,
-        saldo_restante_periodo: nuevoSaldoGlobal,
-        estatus: nuevoEstatusGlobal,
-        fecha_ultima_modificacion: Timestamp.now()
-      };
-
-      // Si es el documento que el usuario movió manualmente, actualizamos su monto y medio
-      if (isEditingThisOne) {
-        updateData.monto_pagado = formData.monto_pagado;
-        updateData.medio_pago = formData.medio_pago;
-        updateData.fecha_pago_realizado = formData.fecha_pago_realizado;
-        if (esPrimerPago) {
-          updateData.servicios = {
-            ...datosPagoReal.servicios,
-            agua_lectura: formData.agua_lectura,
-            luz_lectura: formData.luz_lectura,
-            excedentes_cobrados_de: formData.cobrar_excedentes_de,
-            excedentes_del_deposito: nuevoDescuentoDep
+      // 4. ACTUALIZACIÓN EN LOTE (Batch) para coherencia total
+      // Actualizar Contrato
+      const nuevosPeriodosArr = cData.periodos_esperados.map(p => {
+        if (p.periodo === pago.periodo) {
+          return {
+            ...p,
+            monto_pagado: nuevoTotalPagadoAcumulado,
+            monto_esperado: nuevoTotalEsperado,
+            saldo_restante: nuevoSaldoGlobal,
+            estatus: nuevoEstatusGlobal
           };
         }
-      }
+        return p;
+      });
 
-      return updateDoc(doc(db, "pagos", pDoc.id), updateData);
-    });
+      await updateDoc(contratoRef, {
+        monto_deposito: montoFinalDeposito,
+        periodos_esperados: nuevosPeriodosArr,
+        periodos_pagados: nuevosPeriodosArr.filter(p => p.estatus === "pagado").length
+      });
 
-    await Promise.all(promesasPagos);
+      // 5. Sincronizar TODOS los documentos de pago de este periodo
+      const promesasPagos = todosLosPagosDocs.map(pDoc => {
+        const isEditingThisOne = pDoc.id === pago.id;
+        const pagoData = pDoc.data();
+        
+        const updateData = {
+          total_esperado_periodo: nuevoTotalEsperado,
+          saldo_restante_periodo: nuevoSaldoGlobal,
+          estatus: nuevoEstatusGlobal,
+          fecha_ultima_modificacion: Timestamp.now()
+        };
 
-    alert("✅ Coherencia restaurada en todos los abonos");
-    onExito();
-  } catch (e) {
-    alert("Error: " + e.message);
-  } finally {
-    setLoading(false);
-  }
-};
+        // Si el pago tiene servicios, actualizar las lecturas (mantener excedentes_del_deposito según corresponda)
+        if (esPrimerPago && pagoData.servicios) {
+          updateData.servicios = {
+            ...pagoData.servicios,
+            agua_lectura: formData.agua_lectura,
+            luz_lectura: formData.luz_lectura,
+            limite_agua_aplicado: formData.limite_agua_aplicado,
+            limite_luz_aplicado: formData.limite_luz_aplicado,
+            excedentes_cobrados_de: formData.cobrar_excedentes_de,
+            // CRÍTICO: Solo el pago que estamos editando tiene el descuento real, los demás en 0
+            excedentes_del_deposito: isEditingThisOne ? nuevoDescuentoDep : 0
+          };
+        }
+
+        // Si es el documento que el usuario está editando, actualizar su monto y medio
+        if (isEditingThisOne) {
+          updateData.monto_pagado = formData.monto_pagado;
+          updateData.medio_pago = formData.medio_pago;
+          updateData.fecha_pago_realizado = formData.fecha_pago_realizado;
+        }
+
+        return updateDoc(doc(db, "pagos", pDoc.id), updateData);
+      });
+
+      await Promise.all(promesasPagos);
+
+      alert("✅ Coherencia restaurada en todos los abonos");
+      onExito();
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-200">

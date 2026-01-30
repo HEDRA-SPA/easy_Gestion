@@ -32,40 +32,54 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
   };
 
   useEffect(() => {
-    const cargarDatosInquilino = async () => {
-      if (esEdicion && unidad?.id_inquilino) {
-        setLoading(true);
-        try {
-          const inqSnap = await getDoc(doc(db, "inquilinos", unidad.id_inquilino));
-          if (inqSnap.exists()) {
-            const d = inqSnap.data();
-            const fmt = (f) => f?.seconds ? f.toDate().toISOString().split('T')[0] : f;
+  const cargarDatosInquilino = async () => {
+    if (esEdicion && unidad?.id_inquilino) {
+      setLoading(true);
+      try {
+        // 1. Obtener datos del Inquilino
+        const inqSnap = await getDoc(doc(db, "inquilinos", unidad.id_inquilino));
+        
+        if (inqSnap.exists()) {
+          const d = inqSnap.data();
+          let depositoVivo = d.deposito_garantia_inicial; // Valor por defecto
 
-            setFormData({
-              nombre_completo: d.nombre_completo || "",
-              telefono_contacto: d.telefono_contacto || "",
-              telefono_emergencia: d.telefono_emergencia || "",
-              deposito_garantia_inicial: d.deposito_garantia_inicial || 0,
-              dia_pago: d.dia_pago || 5,
-              renta_actual: d.renta_actual || 0,
-              fecha_inicio_contrato: fmt(d.fecha_inicio_contrato),
-              fecha_fin_contrato: fmt(d.fecha_fin_contrato),
-              no_personas: d.no_personas || 1,
-              docs: d.docs || { ine: "no", carta: "no", contrato: "no" },
-              acompanantes: d.acompanantes || [],
-              id_contrato_actual: d.id_contrato_actual || "",
-              activo: true
-            });
+          // 2. OBTENER EL DEPÓSITO ACTUAL DEL CONTRATO (El cambio clave)
+          if (d.id_contrato_actual) {
+            const contratoSnap = await getDoc(doc(db, "contratos", d.id_contrato_actual));
+            if (contratoSnap.exists()) {
+              // Leemos monto_deposito que es el que se actualiza con los excedentes
+              depositoVivo = contratoSnap.data().monto_deposito;
+            }
           }
-        } catch (error) {
-          console.error("Error cargando inquilino:", error);
-        } finally {
-          setLoading(false);
+
+          const fmt = (f) => f?.seconds ? f.toDate().toISOString().split('T')[0] : f;
+
+          setFormData({
+            nombre_completo: d.nombre_completo || "",
+            telefono_contacto: d.telefono_contacto || "",
+            telefono_emergencia: d.telefono_emergencia || "",
+            // ⭐ CAMBIO: Ahora usamos el valor del contrato, no el histórico del inquilino
+            deposito_garantia_inicial: depositoVivo || 0, 
+            dia_pago: d.dia_pago || 5,
+            renta_actual: d.renta_actual || 0,
+            fecha_inicio_contrato: fmt(d.fecha_inicio_contrato),
+            fecha_fin_contrato: fmt(d.fecha_fin_contrato),
+            no_personas: d.no_personas || 1,
+            docs: d.docs || { ine: "no", carta: "no", contrato: "no" },
+            acompanantes: d.acompanantes || [],
+            id_contrato_actual: d.id_contrato_actual || "",
+            activo: true
+          });
         }
+      } catch (error) {
+        console.error("Error cargando inquilino:", error);
+      } finally {
+        setLoading(false);
       }
-    };
-    cargarDatosInquilino();
-  }, [esEdicion, unidad]);
+    }
+  };
+  cargarDatosInquilino();
+}, [esEdicion, unidad]);
 
   const handleAddAcompanante = () => {
     setFormData(prev => ({
