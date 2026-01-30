@@ -149,17 +149,29 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">
-        🔧 Registrar Nuevo Mantenimiento
-      </h2>
+    <>
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-wrench"></i></span>
+              Registro de un nuevo mantenimiento
+            </h1>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">
+              Registros de mantenimientos preventivos y correctivos para unidades
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6">
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Información de Unidad */}
         <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-100">
-          <h3 className="font-semibold text-lg mb-3 text-blue-900">📍 Información de Unidad</h3>
+          <h3 className="font-semibold text-lg mb-3 text-blue-900"><i class="fa-solid fa-map-pin"></i> Información de Unidad</h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Unidad *
@@ -229,7 +241,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
 
         {/* Detalles del Mantenimiento */}
         <div className="bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-          <h3 className="font-semibold text-lg mb-3 text-gray-900">📋 Detalles del Mantenimiento</h3>
+          <h3 className="font-semibold text-lg mb-3 text-gray-900"><i class="fa-solid fa-file"></i> Detalles del Mantenimiento</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
@@ -352,7 +364,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
 
         {/* Información del Responsable */}
         <div className="bg-green-50 p-4 rounded-lg border-2 border-green-200">
-          <h3 className="font-semibold text-lg mb-3 text-green-900">👷 Responsable del Trabajo</h3>
+          <h3 className="font-semibold text-lg mb-3 text-green-900"><i class="fa-solid fa-user-check"></i> Responsable del Trabajo</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -397,7 +409,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
               className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
             />
             <label htmlFor="requiere_entrada" className="ml-2 block text-sm font-medium text-gray-700">
-              🔑 Requiere entrada a la unidad
+              <i class="fa-solid fa-key"></i> Requiere entrada a la unidad
             </label>
           </div>
         </div>
@@ -423,7 +435,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
             disabled={loading}
             className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed font-bold transition-all shadow-md"
           >
-            {loading ? '⏳ Registrando...' : '✅ Registrar Mantenimiento'}
+            {loading ? ' Registrando...' : ' Registrar Mantenimiento'}
           </button>
           
           <button
@@ -431,11 +443,12 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
             onClick={() => window.history.back()}
             className="px-6 py-3 border-2 border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 font-medium"
           >
-            ❌ Cancelar
+             Cancelar
           </button>
         </div>
       </form>
     </div>
+    </>
   );
 };
 

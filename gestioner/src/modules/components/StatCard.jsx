@@ -1,44 +1,78 @@
-// src/modules/Dashboard/components/StatCard.jsx
 import React from 'react';
 
-const StatCard = ({ title, value, color }) => {
-  // Si el valor es negativo y es la tarjeta de Pendiente, mostrar 0
+const StatCard = ({ title, value, color, icon, trend, subtext }) => {
+  // LÓGICA ORIGINAL INTACTA
   const esPendiente = title.includes("Pendiente");
   const valorAMostrar = (esPendiente && value < 0) ? 0 : value;
   const excedente = (esPendiente && value < 0) ? Math.abs(value) : 0;
 
-  const colors = {
-    blue: "bg-blue-50 border-blue-500 text-blue-600",
-    green: "bg-green-50 border-green-500 text-green-600",
-    red: "bg-red-50 border-red-500 text-red-600",
-    amber: "bg-amber-50 border-amber-500 text-amber-600", // Color extra para excedentes
+  // Configuración de colores basada en la imagen (tonos pastel para el fondo del icono)
+  const colorConfig = {
+    blue: { bg: "bg-blue-50", icon: "text-blue-500", circle: "bg-blue-100" },
+    green: { bg: "bg-green-50", icon: "text-green-600", circle: "bg-green-100" },
+    red: { bg: "bg-red-50", icon: "text-red-500", circle: "bg-red-100" },
+    amber: { bg: "bg-orange-50", icon: "text-orange-500", circle: "bg-orange-100" },
+  };
+
+  const theme = colorConfig[color] || colorConfig.blue;
+
+  // Selector de Iconos Font Awesome basado en el título
+  const getIcon = () => {
+    if (title.includes("Esperado")) return "fa-chart-line";
+    if (title.includes("Cobrado")) return "fa-hand-holding-dollar";
+    if (title.includes("Pendiente")) return "fa-clock-rotate-left";
+    return "fa-wallet";
   };
 
   return (
-    <div className={`${colors[color]} border-l-4 p-5 rounded-xl shadow-sm transition-all hover:shadow-md relative overflow-hidden`}>
+    <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow duration-300 relative overflow-hidden">
       <div className="flex justify-between items-start">
-        <div className="z-10">
-          <p className="text-[10px] font-black uppercase tracking-widest opacity-70">{title}</p>
-          <p className="text-3xl font-black mt-1">
-            ${Number(valorAMostrar).toLocaleString()}
+        {/* Contenido de Texto */}
+        <div className="flex-1">
+          <p className="text-gray-500 text-sm font-medium mb-1 tracking-tight">
+            {title}
           </p>
           
-          {/* Si hay un excedente (pago de más), mostrar esta etiqueta */}
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-2xl font-bold text-slate-800">
+              ${Number(valorAMostrar).toLocaleString()}
+            </h3>
+            
+            {/* Badge de tendencia (Opcional, similar a la imagen +5.7%) */}
+            {trend && (
+               <span className="text-[11px] font-bold text-green-500 flex items-center gap-0.5">
+                  <i className="fa-solid fa-arrow-trend-up"></i> {trend}
+               </span>
+            )}
+          </div>
+
+          {/* Subtexto descriptivo */}
+          {subtext && (
+            <p className="text-gray-400 text-xs mt-1 font-medium">
+              {subtext}
+            </p>
+          )}
+
+          {/* LÓGICA DE EXCEDENTE ORIGINAL */}
           {excedente > 0 && (
-            <div className="mt-2 flex items-center gap-1.5">
+            <div className="mt-3 flex items-center gap-2">
               <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-              <span className="text-[10px] font-black text-green-700 uppercase bg-green-100 px-2 py-0.5 rounded-md">
+              <span className="text-[10px] font-bold text-green-700 uppercase bg-green-100 px-2 py-1 rounded-lg">
                 + ${excedente.toLocaleString()} Cobrado de más
               </span>
             </div>
           )}
         </div>
 
-        <div className="text-4xl opacity-10 italic font-black absolute -right-2 -bottom-2 select-none">
-          {title.includes("Esperado") && "📊"}
-          {title.includes("Cobrado") && "💰"}
-          {title.includes("Pendiente") && "⏳"}
+        {/* Contenedor del Icono (Estilo circular de la imagen) */}
+        <div className={`h-12 w-12 rounded-xl ${theme.circle} flex items-center justify-center transition-transform hover:scale-110`}>
+          <i className={`fa-solid ${getIcon()} ${theme.icon} text-xl`}></i>
         </div>
+      </div>
+      
+      {/* Decoración sutil de fondo para profundidad */}
+      <div className="absolute -right-4 -bottom-4 opacity-[0.03] text-8xl pointer-events-none">
+        <i className={`fa-solid ${getIcon()}`}></i>
       </div>
     </div>
   );

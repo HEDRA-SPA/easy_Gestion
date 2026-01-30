@@ -126,14 +126,21 @@ const MantenimientoLista = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <>
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Gestión de Mantenimientos
-        </h1>
-        <p className="text-gray-600">
-          Total de registros: {mantenimientos.length}
-        </p>
+         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-list-check"></i></span>
+              Gestión de Mantenimientos
+            </h1>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">
+             Total de registros: {mantenimientos.length}
+            </p>
+          </div>
+        </div>
+      </div>
       </div>
 
       {/* Panel de Filtros */}
@@ -338,7 +345,7 @@ const MantenimientoLista = () => {
           onUpdate={cargarMantenimientos}
         />
       )}
-    </div>
+    </>
   );
 };
 

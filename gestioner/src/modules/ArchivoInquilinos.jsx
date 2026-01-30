@@ -79,6 +79,20 @@ useEffect(() => {
 
   return (
     <div className="animate-in fade-in duration-500">
+       {/* HEADER CON TÍTULO Y DESCRIPCIÓN */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-users"></i></span>
+              Archivo de Inquilinos Históricos
+            </h1>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">
+              Inquilinos con contratos finalizados y su historial de pagos
+            </p>
+          </div>
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* PANEL IZQUIERDO: BUSCADOR Y LISTA */}

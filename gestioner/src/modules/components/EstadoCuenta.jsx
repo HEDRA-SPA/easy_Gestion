@@ -319,18 +319,33 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
   }, []);
 
   return (
-    <div className="w-full">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-6">📊 Estado de Cuenta del Mes</h2>
-
-        {/* Controles de selección */}
-        <div className="flex gap-4 mb-6">
+    <div className="w-full no-print">
+      {/* HEADER CON TÍTULO Y DESCRIPCIÓN */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Año</label>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i className="fa-solid fa-chart-simple"></i></span>
+              Estado de Cuenta Mensual
+            </h1>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">
+              Resumen completo de cobros, deudas y ocupación de las propiedades
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* PANEL PRINCIPAL */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6">
+        
+        {/* Controles de selección */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-6">
+          <div className="flex-1">
+            <label className="block text-xs sm:text-sm font-semibold text-gray-600 mb-2">Año</label>
             <select
               value={anioSeleccionado}
               onChange={(e) => setAnioSeleccionado(Number(e.target.value))}
-              className="px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold shadow-sm"
+              className="w-full px-3 sm:px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent text-sm font-medium shadow-sm"
             >
               {aniosDisponibles.map(ano => (
                 <option key={ano} value={ano}>{ano}</option>
@@ -338,12 +353,12 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">Mes</label>
+          <div className="flex-1">
+            <label className="block text-xs sm:text-sm font-semibold text-gray-600 mb-2">Mes</label>
             <select
               value={mesSeleccionado}
               onChange={(e) => setMesSeleccionado(Number(e.target.value))}
-              className="px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-bold shadow-sm"
+              className="w-full px-3 sm:px-4 py-2.5 border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-slate-800 focus:border-transparent text-sm font-medium shadow-sm"
             >
               {mesesDisponibles.map(mes => (
                 <option key={mes.valor} value={mes.valor}>{mes.nombre}</option>
@@ -354,46 +369,47 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
 
         {/* Estado de cuenta */}
         {loading && (
-          <div className="text-center py-12 text-gray-500">
-            <div>Cargando estado de cuenta...</div>
+          <div className="text-center py-12 sm:py-16 text-gray-500">
+            <div className="inline-block w-8 h-8 border-4 border-gray-300 border-t-slate-800 rounded-full animate-spin mb-3"></div>
+            <div className="text-sm sm:text-base">Cargando estado de cuenta...</div>
           </div>
         )}
 
         {datosEstadoCuenta && !loading && (
-          <div ref={impresionRef} className="space-y-6">
-            {/* Resumen general */}
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
-                <p className="text-xs font-bold text-blue-600 uppercase">Total Esperado</p>
-                <p className="text-2xl font-bold text-blue-600 mt-2">${datosEstadoCuenta.totalEsperado.toFixed(2)}</p>
+          <div ref={impresionRef} className="space-y-4 sm:space-y-6">
+            {/* Resumen general - Responsive Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="bg-blue-50 p-3 sm:p-4 rounded-xl border border-blue-200">
+                <p className="text-[10px] sm:text-xs font-semibold text-blue-600 uppercase">Total Esperado</p>
+                <p className="text-lg sm:text-2xl font-bold text-blue-600 mt-1 sm:mt-2">${datosEstadoCuenta.totalEsperado.toFixed(2)}</p>
               </div>
-              <div className="bg-green-50 p-4 rounded-xl border border-green-200">
-                <p className="text-xs font-bold text-green-600 uppercase">Total Cobrado</p>
-                <p className="text-2xl font-bold text-green-600 mt-2">${datosEstadoCuenta.totalCobrado.toFixed(2)}</p>
+              <div className="bg-green-50 p-3 sm:p-4 rounded-xl border border-green-200">
+                <p className="text-[10px] sm:text-xs font-semibold text-green-600 uppercase">Total Cobrado</p>
+                <p className="text-lg sm:text-2xl font-bold text-green-600 mt-1 sm:mt-2">${datosEstadoCuenta.totalCobrado.toFixed(2)}</p>
               </div>
-              <div className="bg-red-50 p-4 rounded-xl border border-red-200">
-                <p className="text-xs font-bold text-red-600 uppercase">Total Deuda</p>
-                <p className="text-2xl font-bold text-red-600 mt-2">${datosEstadoCuenta.totalDeuda.toFixed(2)}</p>
+              <div className="bg-red-50 p-3 sm:p-4 rounded-xl border border-red-200">
+                <p className="text-[10px] sm:text-xs font-semibold text-red-600 uppercase">Total Deuda</p>
+                <p className="text-lg sm:text-2xl font-bold text-red-600 mt-1 sm:mt-2">${datosEstadoCuenta.totalDeuda.toFixed(2)}</p>
               </div>
-              <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
-                <p className="text-xs font-bold text-purple-600 uppercase">Cobranza</p>
-                <p className="text-2xl font-bold text-purple-600 mt-2">{datosEstadoCuenta.totalEsperado > 0 ? ((datosEstadoCuenta.totalCobrado / datosEstadoCuenta.totalEsperado * 100).toFixed(1)) : 0}%</p>
+              <div className="bg-purple-50 p-3 sm:p-4 rounded-xl border border-purple-200">
+                <p className="text-[10px] sm:text-xs font-semibold text-purple-600 uppercase">Cobranza</p>
+                <p className="text-lg sm:text-2xl font-bold text-purple-600 mt-1 sm:mt-2">{datosEstadoCuenta.totalEsperado > 0 ? ((datosEstadoCuenta.totalCobrado / datosEstadoCuenta.totalEsperado * 100).toFixed(1)) : 0}%</p>
               </div>
             </div>
 
-            {/* Tabla de unidades */}
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse bg-white rounded-lg overflow-hidden shadow-sm">
+            {/* Tabla de unidades - Desktop */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full border-collapse bg-white rounded-lg overflow-hidden shadow-sm border border-gray-200">
                 <thead>
-                  <tr className="bg-blue-600 text-white">
-                    <th className="px-4 py-3 text-left text-xs font-bold">UNIDAD</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold">PROPIEDAD</th>
-                    <th className="px-4 py-3 text-left text-xs font-bold">INQUILINO</th>
-                    <th className="px-4 py-3 text-right text-xs font-bold">ESPERADO</th>
-                    <th className="px-4 py-3 text-right text-xs font-bold">COBRADO</th>
-                    <th className="px-4 py-3 text-right text-xs font-bold">DEUDA</th>
-                    <th className="px-4 py-3 text-center text-xs font-bold">%</th>
-                    <th className="px-4 py-3 text-center text-xs font-bold">ESTADO</th>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="px-4 py-3 text-left text-xs font-semibold">UNIDAD</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold">PROPIEDAD</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold">INQUILINO</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold">ESPERADO</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold">COBRADO</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold">DEUDA</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold">%</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold">ESTADO</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -401,14 +417,14 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
                     if (!r.tieneInquilino) {
                       return (
                         <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                          <td className="px-4 py-2 text-sm font-bold text-gray-800">{r.unidad?.no_depto || 'N/A'}</td>
-                          <td className="px-4 py-2 text-sm text-gray-700">{r.nombrePropiedad}</td>
-                          <td className="px-4 py-2 text-sm text-gray-500 italic">{r.nombreInquilino}</td>
-                          <td className="px-4 py-2 text-sm text-right text-gray-400">-</td>
-                          <td className="px-4 py-2 text-sm text-right text-gray-400">-</td>
-                          <td className="px-4 py-2 text-sm text-right text-gray-400">-</td>
-                          <td className="px-4 py-2 text-sm text-center text-gray-400">-</td>
-                          <td className="px-4 py-2 text-sm text-center font-bold text-gray-500">⊘ NO APLICA</td>
+                          <td className="px-4 py-3 text-sm font-semibold text-gray-800">{r.unidad?.no_depto || 'N/A'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-700">{r.nombrePropiedad}</td>
+                          <td className="px-4 py-3 text-sm text-gray-500 italic">{r.nombreInquilino}</td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-400">-</td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-400">-</td>
+                          <td className="px-4 py-3 text-sm text-right text-gray-400">-</td>
+                          <td className="px-4 py-3 text-sm text-center text-gray-400">-</td>
+                          <td className="px-4 py-3 text-xs text-center font-semibold text-gray-500">⊘ NO APLICA</td>
                         </tr>
                       );
                     }
@@ -416,14 +432,14 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
                     const porcentajeCobranza = r.montoEsperado > 0 ? ((r.montoPagado / r.montoEsperado) * 100).toFixed(0) : 0;
                     return (
                       <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                        <td className="px-4 py-2 text-sm font-bold text-gray-800">{r.unidad?.no_depto || 'N/A'}</td>
-                        <td className="px-4 py-2 text-sm text-gray-700">{r.nombrePropiedad}</td>
-                        <td className="px-4 py-2 text-sm text-gray-700">{r.nombreInquilino}</td>
-                        <td className="px-4 py-2 text-sm text-right font-semibold text-blue-600">${r.montoEsperado.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-sm text-right font-semibold text-green-600">${r.montoPagado.toFixed(2)}</td>
-                        <td className={`px-4 py-2 text-sm text-right font-semibold ${r.deuda > 0 ? 'text-red-600' : 'text-green-600'}`}>${r.deuda.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-sm text-center">{porcentajeCobranza}%</td>
-                        <td className={`px-4 py-2 text-sm text-center font-bold ${r.deuda > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">{r.unidad?.no_depto || 'N/A'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{r.nombrePropiedad}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{r.nombreInquilino}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-blue-600">${r.montoEsperado.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-right font-medium text-green-600">${r.montoPagado.toFixed(2)}</td>
+                        <td className={`px-4 py-3 text-sm text-right font-medium ${r.deuda > 0 ? 'text-red-600' : 'text-green-600'}`}>${r.deuda.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-center font-medium">{porcentajeCobranza}%</td>
+                        <td className={`px-4 py-3 text-xs text-center font-semibold ${r.deuda > 0 ? 'text-red-600' : 'text-green-600'}`}>
                           {r.deuda > 0 ? '✗ DEUDA' : '✓ PAGADO'}
                         </td>
                       </tr>
@@ -433,43 +449,102 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
               </table>
             </div>
 
+            {/* Cards de unidades - Mobile */}
+            <div className="lg:hidden space-y-3">
+              {datosEstadoCuenta.resultados.map((r, idx) => (
+                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="text-lg font-bold text-gray-800">Unidad {r.unidad?.no_depto || 'N/A'}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{r.nombrePropiedad}</div>
+                    </div>
+                    {r.tieneInquilino && (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                        r.deuda > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                      }`}>
+                        {r.deuda > 0 ? '✗ DEUDA' : '✓ PAGADO'}
+                      </span>
+                    )}
+                    {!r.tieneInquilino && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                        ⊘ VACÍO
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-sm text-gray-700 mb-3">
+                    <span className="font-medium">Inquilino:</span> {r.nombreInquilino}
+                  </div>
+
+                  {r.tieneInquilino ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-blue-50 p-2.5 rounded-lg border border-blue-100">
+                        <div className="text-[10px] font-semibold text-blue-600 uppercase">Esperado</div>
+                        <div className="text-base font-bold text-blue-700 mt-0.5">${r.montoEsperado.toFixed(2)}</div>
+                      </div>
+                      <div className="bg-green-50 p-2.5 rounded-lg border border-green-100">
+                        <div className="text-[10px] font-semibold text-green-600 uppercase">Cobrado</div>
+                        <div className="text-base font-bold text-green-700 mt-0.5">${r.montoPagado.toFixed(2)}</div>
+                      </div>
+                      <div className={`p-2.5 rounded-lg border ${r.deuda > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100'}`}>
+                        <div className={`text-[10px] font-semibold uppercase ${r.deuda > 0 ? 'text-red-600' : 'text-gray-600'}`}>Deuda</div>
+                        <div className={`text-base font-bold mt-0.5 ${r.deuda > 0 ? 'text-red-700' : 'text-gray-700'}`}>${r.deuda.toFixed(2)}</div>
+                      </div>
+                      <div className="bg-purple-50 p-2.5 rounded-lg border border-purple-100">
+                        <div className="text-[10px] font-semibold text-purple-600 uppercase">Cobranza</div>
+                        <div className="text-base font-bold text-purple-700 mt-0.5">
+                          {r.montoEsperado > 0 ? ((r.montoPagado / r.montoEsperado) * 100).toFixed(0) : 0}%
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-3 rounded-lg text-center text-sm text-gray-500 italic border border-gray-200">
+                      Sin actividad en este período
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
             {/* Resumen general de unidades */}
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-              <div className="grid grid-cols-4 gap-4">
+            <div className="bg-gray-50 p-4 sm:p-5 rounded-xl border border-gray-200">
+              <h3 className="text-sm sm:text-base font-semibold text-gray-700 mb-3 sm:mb-4">Resumen de Unidades</h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 <div>
-                  <p className="text-sm font-bold text-gray-600">Total de Unidades</p>
-                  <p className="text-2xl font-bold text-gray-800 mt-1">{datosEstadoCuenta.cantidadUnidades}</p>
+                  <p className="text-xs sm:text-sm font-medium text-gray-600">Total Unidades</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-800 mt-1">{datosEstadoCuenta.cantidadUnidades}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-600">Disponibles</p>
-                  <p className="text-2xl font-bold text-gray-500 mt-1">{datosEstadoCuenta.unidadesSinInquilino}</p>
+                  <p className="text-xs sm:text-sm font-medium text-gray-600">Disponibles</p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-500 mt-1">{datosEstadoCuenta.unidadesSinInquilino}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-green-600">Al Día</p>
-                  <p className="text-2xl font-bold text-green-600 mt-1">{datosEstadoCuenta.unidadesPagadas}</p>
+                  <p className="text-xs sm:text-sm font-medium text-green-600">Al Día</p>
+                  <p className="text-xl sm:text-2xl font-bold text-green-600 mt-1">{datosEstadoCuenta.unidadesPagadas}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-red-600">Con Deuda</p>
-                  <p className="text-2xl font-bold text-red-600 mt-1">{datosEstadoCuenta.unidadesAdeudadas}</p>
+                  <p className="text-xs sm:text-sm font-medium text-red-600">Con Deuda</p>
+                  <p className="text-xl sm:text-2xl font-bold text-red-600 mt-1">{datosEstadoCuenta.unidadesAdeudadas}</p>
                 </div>
               </div>
             </div>
 
             {/* Botón de impresión */}
-            <div className="flex gap-3 pt-4">
+            <div className="flex gap-3 pt-2 sm:pt-4">
               <button
                 onClick={imprimirEstadoCuenta}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-sm"
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
               >
-                🖨️ Imprimir Estado de Cuenta
+                Imprimir Estado de Cuenta
               </button>
             </div>
           </div>
         )}
 
         {!datosEstadoCuenta && !loading && (
-          <div className="text-center py-12 text-gray-500">
-            <p>Selecciona un mes para ver el estado de cuenta</p>
+          <div className="text-center py-12 sm:py-16 text-gray-500">
+            <div className="text-4xl sm:text-5xl mb-3">📊</div>
+            <p className="text-sm sm:text-base">Selecciona un mes para ver el estado de cuenta</p>
           </div>
         )}
       </div>

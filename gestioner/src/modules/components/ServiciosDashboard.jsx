@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import ServiciosPagoDetalle from './ServiciosPagoDetalle';
 
 const ServiciosDashboard = () => {
   const [periodoInicio, setPeriodoInicio] = useState('');
@@ -222,17 +223,21 @@ const ServiciosDashboard = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <>
       {/* Header */}
+       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Dashboard de Servicios
-        </h1>
-        <p className="text-gray-600">
+         <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-droplet"></i></span>
+              Dashboard de Servicios
+            </h1>
+       <p className="text-sm sm:text-base text-gray-500 mt-1">
           Análisis de consumo de agua y luz por periodo
         </p>
       </div>
-
+      </div>
+</div>
       {/* Filtros */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4 text-gray-800">Filtros de Análisis</h2>
@@ -574,6 +579,9 @@ const ServiciosDashboard = () => {
         </>
       )}
 
+      {/* Detalle de Pagos con Servicios */}
+      <ServiciosPagoDetalle />
+
       {datos && datos.unidades_con_servicios === 0 && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded">
           <div className="flex">
@@ -591,7 +599,7 @@ const ServiciosDashboard = () => {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 };
 

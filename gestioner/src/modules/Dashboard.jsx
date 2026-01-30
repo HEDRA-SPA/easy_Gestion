@@ -10,7 +10,6 @@ import GestionPropiedades from './components/GestionPropiedades';
 import MantenimientoForm from './components/MantenimientoForm';
 import MantenimientoLista from './components/MantenimientoLista';
 import ServiciosDashboard from './components/ServiciosDashboard';
-import ServiciosPagoDetalle from './components/ServiciosPagoDetalle';
 import ReporteFinancieroGlobal from './components/Reportefinancieroglobal';
 
 const Dashboard = ({ 
@@ -74,14 +73,13 @@ const Dashboard = ({
   };
 
   const menuItems = [
-    { id: 'operacion', icon: '📊', label: 'Operación' },
-    { id: 'estado-cuenta', icon: '📄', label: 'Estado Cuenta' },
-    { id: 'archivo', icon: '📁', label: 'Archivo' },
-    { id: 'mantenimiento-form', icon: '🔧', label: 'Nuevo Mant.' },
-    { id: 'mantenimiento-lista', icon: '📋', label: 'Historial' },
-    { id: 'servicios-dashboard', icon: '💧', label: 'Servicios' },
-    { id: 'servicios-detalle', icon: '🔍', label: 'Detalle Serv.' },
-    { id: 'reporte-financiero', icon: '💰', label: 'Reporte Fin.' },
+    { id: 'operacion', icon: 'fas fa-chart-area', label: 'Operación' },
+    { id: 'estado-cuenta', icon: 'fas fa-file-alt', label: 'Estado Cuenta' },
+    { id: 'archivo', icon: 'fas fa-folder', label: 'Archivo' },
+    { id: 'mantenimiento-form', icon: 'fas fa-wrench', label: 'Nuevo Mant.' },
+    { id: 'mantenimiento-lista', icon: 'fas fa-list', label: 'Historial' },
+    { id: 'servicios-dashboard', icon: 'fas fa-tint', label: 'Servicios' },
+    { id: 'reporte-financiero', icon: 'fas fa-money-bill', label: 'Reporte Fin.' },
   ];
 
   return (
@@ -109,7 +107,7 @@ const Dashboard = ({
             <h1 className={`text-lg font-black text-white tracking-tighter uppercase italic transition-opacity duration-300 ${
               !sidebarAbierto ? 'lg:opacity-0 lg:hidden' : 'opacity-100'
             }`}>
-              Gestioner <span className="text-blue-400">Pro</span>
+              Gestion<span className="text-blue-400">er</span>
             </h1>
             <button
               onClick={() => setSidebarAbierto(!sidebarAbierto)}
@@ -144,7 +142,7 @@ const Dashboard = ({
                   : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
               }`}
             >
-              <span className="text-xl flex-shrink-0">{item.icon}</span>
+              <span className="text-xl flex-shrink-0"><i className={item.icon}></i></span>
               <span className={`text-xs font-bold uppercase tracking-wide truncate transition-opacity duration-300 ${
                 !sidebarAbierto ? 'lg:opacity-0 lg:hidden' : 'opacity-100'
               }`}>
@@ -295,12 +293,6 @@ const Dashboard = ({
           {vista === 'servicios-dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <ServiciosDashboard />
-            </div>
-          )}
-
-          {vista === 'servicios-detalle' && (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <ServiciosPagoDetalle />
             </div>
           )}
 
