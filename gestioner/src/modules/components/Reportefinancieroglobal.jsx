@@ -135,6 +135,10 @@ const ReporteFinancieroGlobal = () => {
 
       mantenimientosSnapshot.forEach((doc) => {
         const mant = doc.data();
+        
+        // Excluir mantenimientos cancelados ya que no representan gastos reales
+        if (mant.estatus === 'cancelado') return;
+        
         const costo = Number(mant.costo_real || mant.costo_estimado || 0);
         
         resultado.egresos.mantenimientos.total += costo;
