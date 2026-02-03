@@ -307,7 +307,7 @@ const ServiciosDashboard = () => {
         <button
           onClick={analizarServicios}
           disabled={loading || !periodoInicio}
-          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+         className="w-full flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
         >
           {loading ? 'Analizando...' : 'Analizar Servicios'}
         </button>

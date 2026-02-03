@@ -42,7 +42,7 @@ const HistorialPagos = ({ contrato, onActualizar }) => {
   const handleEliminarIndividual = async (pago, esPrimerPago, todosLosPagosDelPeriodo) => {
     // Si es el primer pago y hay más abonos, advertir sobre eliminación en cascada
     if (esPrimerPago && todosLosPagosDelPeriodo.length > 1) {
-      const abonosPosteriores = todosLosPagosDelPeriodo.slice(1); // Todos excepto el primero
+      const abonosPosteriores = todosLosPagosDelPeriodo.slice(1);
       const totalAbonos = abonosPosteriores.reduce((sum, p) => sum + Number(p.monto_pagado || 0), 0);
       
       const msj = `⚠️ ADVERTENCIA: Este es el PRIMER PAGO del periodo ${pago.periodo}.
@@ -57,7 +57,6 @@ Esto es necesario para mantener la coherencia de las lecturas de servicios y del
       
       setProcesando(true);
       
-      // Eliminar TODOS los pagos del periodo
       const idsAEliminar = todosLosPagosDelPeriodo.map(p => p.id);
       const resultado = await eliminarPago(idsAEliminar, contrato.id, pago.periodo);
       
@@ -69,7 +68,6 @@ Esto es necesario para mantener la coherencia de las lecturas de servicios y del
       
       setProcesando(false);
     } 
-    // Si es un abono posterior, se puede eliminar solo
     else {
       const msj = `¿Estás seguro de eliminar este abono de ${fCurrency(pago.monto_pagado)}? 
 Esto afectará el saldo del periodo ${pago.periodo}.`;
@@ -103,7 +101,7 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
 
   return (
     <>
-      <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`mt-6 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${procesando ? 'opacity-50 pointer-events-none' : ''}`}>
         {procesando && (
           <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-10">
             <div className="bg-white px-6 py-3 rounded-lg shadow-xl font-bold text-gray-700">
@@ -113,7 +111,7 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
         )}
 
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
-          <h3 className="text-white font-black text-lg uppercase tracking-tight">
+          <h3 className="text-white font-black text-base sm:text-lg uppercase tracking-tight">
             📊 Historial de Pagos
           </h3>
           <p className="text-blue-100 text-xs font-medium">
@@ -121,7 +119,8 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
           </p>
         </div>
         
-        <div className="overflow-x-auto">
+        {/* Vista Desktop - Tabla */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-[10px] font-black text-gray-400 uppercase border-b bg-white">
@@ -139,7 +138,6 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
                 
                 return (
                   <React.Fragment key={`${periodo.periodo}-${idx}`}>
-                    {/* Fila Resumen del Mes */}
                     <tr className="bg-gray-50/80 border-l-4 border-l-blue-500">
                       <td className="p-4 font-black text-gray-700">
                         {periodo.periodo} 
@@ -158,7 +156,6 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
                       </td>
                     </tr>
                     
-                    {/* Abonos Individuales */}
                     {tienePagos && pagosDelPeriodo.map((pago, pagoIdx) => {
                       const esPrimerPago = pagoIdx === 0;
                       
@@ -219,6 +216,137 @@ Esto afectará el saldo del periodo ${pago.periodo}.`;
               })}
             </tbody>
           </table>
+        </div>
+
+        {/* Vista Mobile - Cards */}
+        <div className="md:hidden divide-y divide-gray-200">
+          {periodosOrdenados.map((periodo, idx) => {
+            const pagosDelPeriodo = pagosDetallados[periodo.periodo] || [];
+            const tienePagos = pagosDelPeriodo.length > 0;
+            
+            return (
+              <div key={`${periodo.periodo}-${idx}`} className="p-4">
+                {/* Resumen del Periodo */}
+                <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-4 mb-3 border-l-4 border-blue-500">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h4 className="font-black text-gray-800 text-sm">{periodo.periodo}</h4>
+                      <p className="text-[10px] text-gray-500 italic">
+                        Renta: {fCurrency(periodo.monto_esperado)}
+                      </p>
+                    </div>
+                    <span className="text-[9px] uppercase font-bold text-gray-400 bg-white px-2 py-1 rounded">
+                      {periodo.estatus}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-gray-500 text-[10px]">Pagado:</span>
+                      <p className="font-bold text-blue-600">{fCurrency(periodo.monto_pagado)}</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 text-[10px]">Debe:</span>
+                      <p className="font-bold text-red-600">{fCurrency(periodo.saldo_restante)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Abonos Individuales */}
+                {tienePagos && (
+                  <div className="space-y-2 pl-2">
+                    {pagosDelPeriodo.map((pago, pagoIdx) => {
+                      const esPrimerPago = pagoIdx === 0;
+                      
+                      return (
+                        <div 
+                          key={pago.id} 
+                          className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm"
+                        >
+                          {/* Header del Abono */}
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                {esPrimerPago ? (
+                                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                    ⭐ Primer Pago
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-gray-400">
+                                    Abono #{pagoIdx + 1}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="font-black text-gray-800 text-lg">
+                                {fCurrency(pago.monto_pagado)}
+                              </p>
+                              <p className="text-[10px] text-gray-400 uppercase mt-0.5">
+                                {pago.medio_pago}
+                              </p>
+                            </div>
+                            
+                            {/* Acciones */}
+                            <div className="flex gap-1">
+                              <button 
+                                onClick={() => setPagoAEditar({
+                                  ...pago,
+                                  esPrimerPago: esPrimerPago,
+                                  id_contrato: contrato.id
+                                })}
+                                className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition active:scale-95"
+                                title="Editar"
+                              >
+                                ✏️
+                              </button>
+                              <button 
+                                onClick={() => handleEliminarIndividual(pago, esPrimerPago, pagosDelPeriodo)}
+                                className={`${esPrimerPago ? 'text-red-700' : 'text-red-500'} hover:bg-red-50 p-2 rounded-lg transition active:scale-95`}
+                                title="Eliminar"
+                              >
+                                {esPrimerPago ? '🗑️⚠️' : '🗑️'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Info Adicional */}
+                          <div className="pt-2 border-t border-gray-100 space-y-1">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-gray-500">Fecha:</span>
+                              <span className="text-gray-700 font-medium">
+                                {fFecha(pago.fecha_pago_realizado)}
+                              </span>
+                            </div>
+                            
+                            {pago.servicios?.excedentes_del_deposito > 0 && (
+                              <div className="flex justify-between text-[11px]">
+                                <span className="text-gray-500">Depósito usado:</span>
+                                <span className="text-purple-600 font-bold">
+                                  -{fCurrency(pago.servicios.excedentes_del_deposito)}
+                                </span>
+                              </div>
+                            )}
+                            
+                            {esPrimerPago && pago.servicios && (
+                              <div className="bg-gray-50 rounded p-2 mt-2">
+                                <p className="text-[10px] text-gray-500 mb-1">Lecturas:</p>
+                                <div className="flex gap-3 text-[10px]">
+                                  <span className="text-gray-600">
+                                    💧 Agua: <strong>{pago.servicios.agua_lectura || 0}</strong>
+                                  </span>
+                                  <span className="text-gray-600">
+                                    ⚡ Luz: <strong>{pago.servicios.luz_lectura || 0}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
 const ReporteFinancieroGlobal = () => {
@@ -50,6 +50,15 @@ const ReporteFinancieroGlobal = () => {
 
     setLoading(true);
     try {
+      const propRef = doc(db, 'propiedades', 'chilpancingo'); // Necesitas importar 'doc' de firestore
+      const propSnap = await getDoc(propRef);
+      let LIMITE_AGUA_CONFIG = 250; // Valores por defecto por seguridad
+      let LIMITE_LUZ_CONFIG = 250;
+      if (propSnap.exists()) {
+        const configData = propSnap.data();
+        LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
+        LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
+      }
       const resultado = {
         periodoInicio,
         periodoFin,
@@ -189,8 +198,8 @@ const ReporteFinancieroGlobal = () => {
           const {
             agua_lectura = 0,
             luz_lectura = 0,
-            limite_agua_aplicado = 250,
-            limite_luz_aplicado = 250
+            limite_agua_aplicado = LIMITE_AGUA_CONFIG, 
+            limite_luz_aplicado = LIMITE_LUZ_CONFIG
           } = pago.servicios;
 
           // Calcular lo condonado (lo que NOSOTROS pagamos)
@@ -469,7 +478,7 @@ const ReporteFinancieroGlobal = () => {
         <body>
           <div class="contenedor">
             <div class="encabezado">
-              <div class="titulo">📊 REPORTE FINANCIERO GLOBAL</div>
+              <div class="titulo"><i class="fa-solid fa-chart-area"></i> REPORTE FINANCIERO GLOBAL</div>
               <div class="subtitulo">Estado de Resultados Completo con Ingresos y Egresos</div>
               <div class="periodo-badge">
                 ${datosReporte.periodoInicio === datosReporte.periodoFin 
@@ -481,7 +490,7 @@ const ReporteFinancieroGlobal = () => {
 
             <div class="resumen-cards">
               <div class="card ingresos">
-                <div class="card-label">💰 Ingresos Totales</div>
+                <div class="card-label"><i class="fa-solid fa-sack-dollar"></i> Ingresos Totales</div>
                 <div class="card-valor">$${datosReporte.ingresos.total_cobrado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
                 <div class="card-detalle">
                   Esperado: $${datosReporte.ingresos.total_esperado.toLocaleString('es-MX', {minimumFractionDigits: 2})}
@@ -489,7 +498,7 @@ const ReporteFinancieroGlobal = () => {
               </div>
 
               <div class="card egresos">
-                <div class="card-label">💸 Egresos Totales</div>
+                <div class="card-label"><i class="fa-solid fa-money-bill-wave"></i> Egresos Totales</div>
                 <div class="card-valor">$${datosReporte.egresos.total_egresos.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
                 <div class="card-detalle">
                   Mantenimiento + Servicios
@@ -497,7 +506,7 @@ const ReporteFinancieroGlobal = () => {
               </div>
 
               <div class="card utilidad">
-                <div class="card-label">📈 Utilidad Neta</div>
+                <div class="card-label"><i class="fa-solid fa-money-bill-trend-up"></i> Utilidad Neta</div>
                 <div class="card-valor">$${datosReporte.balance.utilidad_neta.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
                 <div class="card-detalle">
                   Margen: ${datosReporte.balance.margen_utilidad.toFixed(1)}%
@@ -506,7 +515,7 @@ const ReporteFinancieroGlobal = () => {
             </div>
 
             <div class="seccion">
-              <div class="seccion-titulo">💰 INGRESOS POR RENTAS</div>
+              <div class="seccion-titulo"><i class="fa-solid fa-sack-dollar"></i> INGRESOS POR RENTAS</div>
               <table>
                 <thead>
                   <tr>
@@ -548,7 +557,7 @@ const ReporteFinancieroGlobal = () => {
             </div>
 
             <div class="seccion">
-              <div class="seccion-titulo">🔧 EGRESOS - MANTENIMIENTOS</div>
+              <div class="seccion-titulo"><i class="fa-solid fa-hammer"></i> EGRESOS - MANTENIMIENTOS</div>
               
               <div class="stats-mini">
                 <div class="stat-box">
@@ -604,11 +613,11 @@ const ReporteFinancieroGlobal = () => {
                     </tr>
                   </tbody>
                 </table>
-              ` : '<p style="text-align: center; color: #6b7280; padding: 20px;">✅ No hay gastos de mantenimiento en este periodo</p>'}
+              ` : '<p style="text-align: center; color: #6b7280; padding: 20px;"> No hay gastos de mantenimiento en este periodo</p>'}
             </div>
 
             <div class="seccion">
-              <div class="seccion-titulo">💧⚡ EGRESOS - SERVICIOS CONDONADOS</div>
+              <div class="seccion-titulo"><i class="fa-solid fa-droplet"></i> EGRESOS - SERVICIOS CONDONADOS</div>
               
               <div class="stats-mini">
                 <div class="stat-box">
@@ -654,11 +663,11 @@ const ReporteFinancieroGlobal = () => {
                     </tr>
                   </tbody>
                 </table>
-              ` : '<p style="text-align: center; color: #6b7280; padding: 20px;">✅ No hay servicios condonados en este periodo</p>'}
+              ` : '<p style="text-align: center; color: #6b7280; padding: 20px;"> No hay servicios condonados en este periodo</p>'}
             </div>
 
             <div class="balance-final">
-              <h3 style="font-size: 20px; margin-bottom: 5px;">📈 BALANCE FINANCIERO DEL PERIODO</h3>
+              <h3 style="font-size: 20px; margin-bottom: 5px;"><i class="fa-solid fa-chart-area"></i> BALANCE FINANCIERO DEL PERIODO</h3>
               <p style="font-size: 13px; opacity: 0.9; margin-bottom: 15px;">Resumen de Ganancias y Rentabilidad Real</p>
               
               <div class="balance-grid">
@@ -732,14 +741,22 @@ const ReporteFinancieroGlobal = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-8 text-white shadow-xl">
-        <h1 className="text-4xl font-bold mb-2">📊 Reporte Financiero Global</h1>
-        <p className="text-blue-100 text-lg">
-          Análisis completo: Ingresos por Rentas + Egresos (Mantenimientos + Servicios) = Ganancia Real
+    <>
+     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+         <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-droplet"></i></span>
+              Reporte financiero global
+            </h1>
+       <p className="text-sm sm:text-base text-gray-500 mt-1">
+          Detalles de ingresos y egresos del condominio en un periodo seleccionado.
         </p>
       </div>
+      </div>
+      </div>
+  <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6 ">
+     
 
       {/* Filtros */}
       <div className="bg-white p-6 rounded-xl shadow-md border border-gray-200">
@@ -774,9 +791,9 @@ const ReporteFinancieroGlobal = () => {
         <button
           onClick={generarReporte}
           disabled={loading || !periodoInicio || !periodoFin}
-          className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-bold text-lg shadow-md transition-all"
+          className="w-full flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
         >
-          {loading ? '⏳ Generando Reporte...' : '🔍 Generar Reporte Financiero'}
+          {loading ? ' Generando Reporte...' : ' Generar Reporte'}
         </button>
       </div>
 
@@ -786,7 +803,7 @@ const ReporteFinancieroGlobal = () => {
           {/* Cards Resumen */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white shadow-lg">
-              <p className="text-green-100 text-sm font-medium uppercase mb-2">💰 Ingresos Totales</p>
+              <p className="text-green-100 text-sm font-medium uppercase mb-2"><i class="fa-solid fa-sack-dollar"></i> Ingresos Totales</p>
               <p className="text-4xl font-bold">
                 ${datosReporte.ingresos.total_cobrado.toLocaleString('es-MX', {minimumFractionDigits: 2})}
               </p>
@@ -796,7 +813,7 @@ const ReporteFinancieroGlobal = () => {
             </div>
 
             <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl p-6 text-white shadow-lg">
-              <p className="text-red-100 text-sm font-medium uppercase mb-2">💸 Egresos Totales</p>
+              <p className="text-red-100 text-sm font-medium uppercase mb-2"><i class="fa-solid fa-money-bill-wave"></i> Egresos Totales</p>
               <p className="text-4xl font-bold">
                 ${datosReporte.egresos.total_egresos.toLocaleString('es-MX', {minimumFractionDigits: 2})}
               </p>
@@ -807,7 +824,7 @@ const ReporteFinancieroGlobal = () => {
             </div>
 
             <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white shadow-lg">
-              <p className="text-blue-100 text-sm font-medium uppercase mb-2">📈 Utilidad Neta</p>
+              <p className="text-blue-100 text-sm font-medium uppercase mb-2"><i class="fa-solid fa-money-bill-trend-up"></i> Utilidad Neta</p>
               <p className="text-4xl font-bold">
                 ${datosReporte.balance.utilidad_neta.toLocaleString('es-MX', {minimumFractionDigits: 2})}
               </p>
@@ -826,7 +843,7 @@ const ReporteFinancieroGlobal = () => {
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
               </svg>
-              🖨️ Imprimir Reporte Completo
+               Imprimir Reporte Completo
             </button>
           </div>
 
@@ -857,6 +874,7 @@ const ReporteFinancieroGlobal = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

@@ -80,49 +80,48 @@ const Dashboard = ({
     { id: 'mantenimiento-lista', icon: 'fas fa-list', label: 'Historial' },
     { id: 'servicios-dashboard', icon: 'fas fa-tint', label: 'Servicios' },
     { id: 'reporte-financiero', icon: 'fas fa-money-bill', label: 'Reporte Fin.' },
+    { id: 'gestion-propiedades', icon: 'fas fa-home', label: 'Propiedades' },
   ];
 
   return (
-    <div className="flex h-screen bg-gray-50 font-sans">
+<div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
       
       {/* OVERLAY MOBILE */}
       {sidebarAbierto && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setSidebarAbierto(false)}
-        />
-      )}
+      <div 
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] lg:hidden"
+        onClick={() => setSidebarAbierto(false)}
+      />
+    )}
 
       {/* SIDEBAR */}
-      <div 
-        className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-800 to-slate-900 shadow-2xl transition-all duration-300 z-50 
-          ${sidebarAbierto ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          lg:${sidebarAbierto ? 'w-64' : 'w-16'}
-          w-64
-        `}
-      >
+     <div 
+      className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-800 to-slate-900 shadow-2xl transition-all duration-300 z-[70] 
+        ${sidebarAbierto ? 'translate-x-0 w-full lg:w-64' : '-translate-x-full lg:translate-x-0 lg:w-16'}
+      `}
+    >
         {/* HEADER */}
-        <div className="p-4 border-b border-slate-700/50">
-          <div className="flex items-center justify-between">
-            <h1 className={`text-lg font-black text-white tracking-tighter uppercase italic transition-opacity duration-300 ${
-              !sidebarAbierto ? 'lg:opacity-0 lg:hidden' : 'opacity-100'
-            }`}>
-              Gestion<span className="text-blue-400">er</span>
-            </h1>
-            <button
-              onClick={() => setSidebarAbierto(!sidebarAbierto)}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-white transition-all hidden lg:block"
-            >
-              {sidebarAbierto ? '◀' : '▶'}
-            </button>
-            <button
-              onClick={() => setSidebarAbierto(false)}
-              className="p-2 rounded-lg hover:bg-slate-700/50 text-white transition-all lg:hidden"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+       <div className="p-4 border-b border-slate-700/50 flex items-center justify-between">
+        <h1 className={`text-lg font-black text-white tracking-tighter uppercase italic ${!sidebarAbierto && 'lg:hidden'}`}>
+          Gestion<span className="text-blue-400">er</span>
+        </h1>
+        
+        {/* Botón Cerrar (X) - Solo visible en móvil cuando está abierto */}
+        <button 
+          onClick={() => setSidebarAbierto(false)}
+          className="lg:hidden p-2 text-white text-2xl"
+        >
+          <i className="fa-solid fa-xmark"></i>
+        </button>
+
+        {/* Botón Chevron - Solo visible en desktop */}
+        <button
+          onClick={() => setSidebarAbierto(!sidebarAbierto)}
+          className="hidden lg:block p-2 rounded-lg hover:bg-slate-700/50 text-white transition-all"
+        >
+          <i className={`fa-solid ${sidebarAbierto ? 'fa-chevron-left' : 'fa-chevron-right'}`}></i>
+        </button>
+      </div>
 
         {/* MENU ITEMS */}
         <nav className="p-3 space-y-1 overflow-y-auto h-[calc(100%-80px)]">
@@ -154,70 +153,100 @@ const Dashboard = ({
       </div>
 
       {/* CONTENIDO PRINCIPAL */}
-      <div 
-        className={`flex-1 transition-all duration-300 
-          lg:${sidebarAbierto ? 'ml-64' : 'ml-16'}
-          ml-0
-        `}
-      >
-        {/* BOTÓN HAMBURGUESA MOBILE */}
-        <button
-          onClick={() => setSidebarAbierto(true)}
-          className="fixed top-4 left-4 z-30 p-3 bg-slate-800 text-white rounded-xl shadow-lg lg:hidden hover:bg-slate-700 transition-all"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-
-        <div className="p-6 max-w-7xl mx-auto space-y-8 overflow-y-auto h-screen pt-20 lg:pt-6">
-          
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 lg:${sidebarAbierto ? 'ml-64' : 'ml-16'}`}>
+       {/* BARRA SUPERIOR MOBILE (TopBar) */}
+      <header className="lg:hidden bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between sticky top-0 z-40">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarAbierto(true)}
+            className="p-2 text-slate-600 hover:bg-slate-50 rounded-xl"
+          >
+            <i className="fa-solid fa-bars-staggered text-xl"></i>
+          </button>
+          <span className="font-black text-slate-800 tracking-tighter uppercase italic text-sm">
+            Gestion<span className="text-blue-500">er</span>
+          </span>
+        </div>
+        {/* Indicador de Vista Actual */}
+        <div className="bg-slate-100 px-3 py-1 rounded-full">
+          <span className="text-[10px] font-black text-slate-500 uppercase">
+            {menuItems.find(m => m.id === vista)?.label}
+          </span>
+        </div>
+      </header>
+      <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+        <div className="max-w-7xl mx-auto space-y-8">
           {vista === 'operacion' && (
             <>
               {/* FILTROS */}
-              <div className="flex flex-col md:flex-row gap-4 items-end bg-white p-4 rounded-2xl border border-gray-100 shadow-sm w-fit">
-                <div className="flex flex-col gap-1">
-                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Visualización</span>
-                  <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                    <button onClick={() => setModoFiltro('mes')} className={`px-4 py-2 text-[10px] font-black rounded-md transition-all ${modoFiltro === 'mes' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>MES</button>
-                    <button onClick={() => setModoFiltro('rango')} className={`px-4 py-2 text-[10px] font-black rounded-md transition-all ${modoFiltro === 'rango' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'}`}>RANGO</button>
-                  </div>
-                </div>
+              <div className="w-full bg-white p-2 rounded-[2rem] border border-gray-100 shadow-sm flex flex-col lg:flex-row items-center justify-between gap-4">
+  
+  {/* IZQUIERDA: Selector de Modo (Estilo Switch) */}
+  <div className="flex items-center gap-3 pl-4">
+    <div className="flex flex-col">
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-1">Vista</span>
+      <div className="flex bg-slate-100/80 p-1 rounded-xl">
+        <button 
+          onClick={() => setModoFiltro('mes')} 
+          className={`px-6 py-2 text-[10px] font-black rounded-lg transition-all ${modoFiltro === 'mes' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          MES
+        </button>
+        <button 
+          onClick={() => setModoFiltro('rango')} 
+          className={`px-6 py-2 text-[10px] font-black rounded-lg transition-all ${modoFiltro === 'rango' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          RANGO
+        </button>
+      </div>
+    </div>
+  </div>
 
-                <div className="flex items-center gap-4 bg-gray-50 px-4 py-2 rounded-xl border border-gray-200 min-h-[52px]">
-                  <div className="flex flex-col">
-                    <span className="text-[8px] font-bold text-gray-400 uppercase">Inicio</span>
-                    <input 
-                      type="date" 
-                      value={rangoFechas.inicio} 
-                      onChange={(e) => setRangoFechas({...rangoFechas, inicio: e.target.value})} 
-                      className="text-sm font-bold bg-transparent outline-none text-blue-600"
-                    />
-                  </div>
-                  
-                  {modoFiltro === 'rango' && (
-                    <>
-                      <span className="text-gray-300">/</span>
-                      <div className="flex flex-col">
-                        <span className="text-[8px] font-bold text-gray-400 uppercase">Fin</span>
-                        <input 
-                          type="date" 
-                          value={rangoFechas.fin} 
-                          onChange={(e) => setRangoFechas({...rangoFechas, fin: e.target.value})} 
-                          className="text-sm font-bold bg-transparent outline-none text-blue-600"
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
+  {/* CENTRO: Inputs de Fecha con estilo minimalista */}
+  <div className="flex-1 flex flex-col md:flex-row items-center justify-center gap-6 w-full lg:w-auto">
+    <div className="relative group">
+      <span className="absolute -top-2 left-3 bg-white px-2 text-[9px] font-bold text-slate-400 uppercase tracking-tighter z-10">Inicio</span>
+      <div className="flex items-center gap-3 bg-slate-50/50 px-5 py-3 rounded-2xl border border-slate-100 group-hover:border-blue-200 transition-all">
+        <i className="fa-regular fa-calendar text-blue-500"></i>
+        <input 
+          type="date" 
+          value={rangoFechas.inicio} 
+          onChange={(e) => setRangoFechas({...rangoFechas, inicio: e.target.value})} 
+          className="bg-transparent outline-none text-sm font-bold text-slate-700 cursor-pointer"
+        />
+      </div>
+    </div>
 
-                <button 
-                  onClick={handleBuscar}
-                  className="px-6 py-3 bg-blue-600 text-white text-[10px] font-black uppercase rounded-xl hover:bg-blue-700 transition-all shadow-lg hover:shadow-xl active:scale-95"
-                >
-                  🔍 Buscar
-                </button>
-              </div>
+    {modoFiltro === 'rango' && (
+      <>
+        <div className="hidden md:block h-px w-4 bg-slate-200"></div>
+        <div className="relative group">
+          <span className="absolute -top-2 left-3 bg-white px-2 text-[9px] font-bold text-slate-400 uppercase tracking-tighter z-10">Fin</span>
+          <div className="flex items-center gap-3 bg-slate-50/50 px-5 py-3 rounded-2xl border border-slate-100 group-hover:border-blue-200 transition-all">
+            <i className="fa-regular fa-calendar-check text-blue-500"></i>
+            <input 
+              type="date" 
+              value={rangoFechas.fin} 
+              onChange={(e) => setRangoFechas({...rangoFechas, fin: e.target.value})} 
+              className="bg-transparent outline-none text-sm font-bold text-slate-700 cursor-pointer"
+            />
+          </div>
+        </div>
+      </>
+    )}
+  </div>
+
+  {/* DERECHA: Botón de Acción */}
+  <div className="pr-2 w-full lg:w-auto">
+    <button 
+      onClick={handleBuscar}
+      className="w-full lg:w-auto px-8 py-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.15em] rounded-2xl hover:bg-blue-600 hover:shadow-lg hover:shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+    >
+      <i className="fa-solid fa-magnifying-glass"></i>
+      Actualizar Resultados
+    </button>
+  </div>
+</div>
 
               {/* STATS */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -302,6 +331,12 @@ const Dashboard = ({
             </div>
           )}
 
+          {vista === 'gestion-propiedades' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <GestionPropiedades />
+            </div>
+          )}
+
           {/* MODAL */}
           {unidadSeleccionada && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
@@ -320,9 +355,10 @@ const Dashboard = ({
           )}
          
         </div>
-      </div>
+      </main>
     </div>
-  );
+  </div>
+);
 };
 
 export default Dashboard;

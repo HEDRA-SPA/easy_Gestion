@@ -433,7 +433,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
           <button
             type="submit"
             disabled={loading}
-            className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed font-bold transition-all shadow-md"
+           className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
           >
             {loading ? ' Registrando...' : ' Registrar Mantenimiento'}
           </button>

@@ -80,16 +80,23 @@ const ServiciosPagoDetalle = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      {/* Header */}
+    <>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6 mt-6">
+       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Detalle de Pagos con Servicios
-        </h1>
-        <p className="text-gray-600">
-          Vista detallada de cada pago y sus servicios
+         <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-droplet"></i></span>
+              Detalle de pago de servicios
+            </h1>
+       <p className="text-sm sm:text-base text-gray-500 mt-1">
+          Detalles de pago de servicios de unidades especificas
         </p>
       </div>
+      </div>
+</div>
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        {/* Header */}
+   
 
       {/* Filtros */}
       <div className="bg-white p-6 rounded-lg shadow-md">
@@ -135,7 +142,7 @@ const ServiciosPagoDetalle = () => {
         <button
           onClick={cargarPagos}
           disabled={loading || !periodo}
-          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 font-medium"
+           className="w-full flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
         >
           {loading ? 'Cargando...' : 'Buscar Pagos'}
         </button>
@@ -364,6 +371,7 @@ const ServiciosPagoDetalle = () => {
         </div>
       ) : null}
     </div>
+    </>
   );
 };
 
