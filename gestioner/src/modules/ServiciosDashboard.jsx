@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from './firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 const ServiciosDashboard = () => {
   const [periodoInicio, setPeriodoInicio] = useState('');
@@ -26,57 +26,46 @@ const ServiciosDashboard = () => {
 
     setLoading(true);
     try {
-      // Construir query para obtener pagos del periodo
-      let q = collection(db, 'pagos');
-      const conditions = [];
-
-      // Filtrar por periodo
-      if (periodoInicio && periodoFin) {
-        // Si es el mismo periodo, buscar exactamente ese
-        if (periodoInicio === periodoFin) {
-          conditions.push(where('periodo', '==', periodoInicio));
-        } else {
-          // Si es rango, buscar entre periodos (bimestral/trimestral)
-          conditions.push(where('periodo', '>=', periodoInicio));
-          conditions.push(where('periodo', '<=', periodoFin));
-        }
-      } else if (periodoInicio) {
-        conditions.push(where('periodo', '==', periodoInicio));
-      }
-
-      if (conditions.length > 0) {
-        q = query(q, ...conditions, orderBy('periodo', 'asc'));
-      }
-
-      const pagosSnapshot = await getDocs(q);
+      // 🔥 CAMBIO: Obtener TODOS los pagos sin filtro de Firestore
+      console.log('Obteniendo todos los pagos...');
+      const pagosSnapshot = await getDocs(collection(db, 'pagos'));
       const pagosData = [];
+      
       pagosSnapshot.forEach((doc) => {
         pagosData.push({ id: doc.id, ...doc.data() });
       });
 
-      // Filtrar por propiedad si se especificó
+      console.log(`Total de pagos en BD: ${pagosData.length}`);
+
+      // 🔥 CAMBIO: Filtrar por periodo EN MEMORIA
       let pagosFiltrados = pagosData;
-      if (propiedadFiltro) {
-        pagosFiltrados = pagosData.filter(pago => 
-          pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
-        );
+      
+      if (periodoInicio && periodoFin) {
+        console.log(`Filtrando por rango: ${periodoInicio} a ${periodoFin}`);
+        pagosFiltrados = pagosData.filter(pago => {
+          if (!pago.periodo) return false;
+          return pago.periodo >= periodoInicio && pago.periodo <= periodoFin;
+        });
+      } else if (periodoInicio) {
+        console.log(`Filtrando por periodo único: ${periodoInicio}`);
+        pagosFiltrados = pagosData.filter(pago => pago.periodo === periodoInicio);
       }
 
-      // Obtener inquilinos activos para validar
-      const inquilinosQuery = query(
-        collection(db, 'inquilinos'),
-        where('activo', '==', true)
-      );
-      const inquilinosSnapshot = await getDocs(inquilinosQuery);
-      const inquilinosActivos = new Set();
-      inquilinosSnapshot.forEach((doc) => {
-        inquilinosActivos.add(doc.id);
-      });
+      console.log(`Pagos después de filtrar por periodo: ${pagosFiltrados.length}`);
 
-      // Filtrar solo pagos de inquilinos activos
-      const pagosActivos = pagosFiltrados.filter(pago => 
-        inquilinosActivos.has(pago.id_inquilino)
-      );
+      // Filtrar por propiedad si se especificó
+      if (propiedadFiltro) {
+        console.log(`Filtrando por propiedad: ${propiedadFiltro}`);
+        pagosFiltrados = pagosFiltrados.filter(pago => 
+          pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
+        );
+        console.log(`Pagos después de filtrar por propiedad: ${pagosFiltrados.length}`);
+      }
+
+      // Ya no filtramos por inquilinos activos - queremos ver TODOS los pagos del periodo
+      const pagosActivos = pagosFiltrados;
+
+      console.log(`Pagos a analizar: ${pagosActivos.length}`);
 
       // Analizar servicios
       const analisis = {
@@ -109,6 +98,7 @@ const ServiciosDashboard = () => {
 
           // Solo contar si hay consumo real (>0)
           if (agua_lectura > 0 || luz_lectura > 0) {
+            console.log(`✅ Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}`);
             analisis.unidades_con_servicios++;
 
             // Sumar consumos totales
@@ -184,6 +174,7 @@ const ServiciosDashboard = () => {
         }
       });
 
+      console.log('Análisis completado:', analisis);
       setDatos(analisis);
       setPagosDetalle(pagosActivos);
     } catch (error) {

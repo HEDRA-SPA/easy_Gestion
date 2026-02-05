@@ -215,7 +215,7 @@ const ArchivoInquilinos = ({ unidades }) => {
                 onClick={() => setMostrarModalRenovacion(true)} 
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 sm:p-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
               >
-                <span>🔄</span> Re-activar y Renovar
+                <span></span> Re-activar y Renovar
               </button>
             </div>
           )}

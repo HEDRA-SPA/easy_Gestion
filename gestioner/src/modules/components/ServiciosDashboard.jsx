@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import ServiciosPagoDetalle from './ServiciosPagoDetalle';
 
 const ServiciosDashboard = () => {
   const [periodoInicio, setPeriodoInicio] = useState('');
@@ -27,61 +26,58 @@ const ServiciosDashboard = () => {
 
     setLoading(true);
     try {
-      // Construir query para obtener pagos del periodo
-      let q = collection(db, 'pagos');
-      const conditions = [];
-
-      // Filtrar por periodo
-      if (periodoInicio && periodoFin) {
-        // Si es el mismo periodo, buscar exactamente ese
-        if (periodoInicio === periodoFin) {
-          conditions.push(where('periodo', '==', periodoInicio));
-        } else {
-          // Si es rango, buscar entre periodos (bimestral/trimestral)
-          conditions.push(where('periodo', '>=', periodoInicio));
-          conditions.push(where('periodo', '<=', periodoFin));
-        }
-      } else if (periodoInicio) {
-        conditions.push(where('periodo', '==', periodoInicio));
+      // 🔥 PASO 1: Obtener configuración de límites desde Firestore
+      const propRef = doc(db, 'propiedades', 'chilpancingo');
+      const propSnap = await getDoc(propRef);
+      let LIMITE_AGUA_CONFIG = 250;
+      let LIMITE_LUZ_CONFIG = 250;
+      
+      if (propSnap.exists()) {
+        const configData = propSnap.data();
+        LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
+        LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
+        console.log(`✅ Límites configurados - Agua: ${LIMITE_AGUA_CONFIG}, Luz: ${LIMITE_LUZ_CONFIG}`);
       }
 
-      if (conditions.length > 0) {
-        q = query(q, ...conditions, orderBy('periodo', 'asc'));
-      }
-
-      const pagosSnapshot = await getDocs(q);
+      // 🔥 PASO 2: Obtener TODOS los pagos sin filtro de Firestore
+      console.log('Obteniendo todos los pagos...');
+      const pagosSnapshot = await getDocs(collection(db, 'pagos'));
       const pagosData = [];
+      
       pagosSnapshot.forEach((doc) => {
         pagosData.push({ id: doc.id, ...doc.data() });
       });
 
-      // Filtrar por propiedad si se especificó
+      console.log(`Total de pagos en BD: ${pagosData.length}`);
+
+      // 🔥 PASO 3: Filtrar por periodo EN MEMORIA (igual que antes)
       let pagosFiltrados = pagosData;
-      if (propiedadFiltro) {
-        pagosFiltrados = pagosData.filter(pago => 
-          pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
-        );
+      
+      if (periodoInicio && periodoFin) {
+        console.log(`Filtrando por rango: ${periodoInicio} a ${periodoFin}`);
+        pagosFiltrados = pagosData.filter(pago => {
+          if (!pago.periodo) return false;
+          return pago.periodo >= periodoInicio && pago.periodo <= periodoFin;
+        });
+      } else if (periodoInicio) {
+        console.log(`Filtrando por periodo único: ${periodoInicio}`);
+        pagosFiltrados = pagosData.filter(pago => pago.periodo === periodoInicio);
       }
 
-      // Obtener inquilinos activos para validar
-      const inquilinosQuery = query(
-        collection(db, 'inquilinos'),
-        where('activo', '==', true)
-      );
-      const inquilinosSnapshot = await getDocs(inquilinosQuery);
-      const inquilinosActivos = new Set();
-      inquilinosSnapshot.forEach((doc) => {
-        inquilinosActivos.add(doc.id);
-      });
+      console.log(`Pagos después de filtrar por periodo: ${pagosFiltrados.length}`);
 
-      // Filtrar solo pagos de inquilinos activos
-      const pagosActivos = pagosFiltrados.filter(pago => 
-        inquilinosActivos.has(pago.id_inquilino)
-      );
+      // Filtrar por propiedad si se especificó
+      if (propiedadFiltro) {
+        console.log(`Filtrando por propiedad: ${propiedadFiltro}`);
+        pagosFiltrados = pagosFiltrados.filter(pago => 
+          pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
+        );
+        console.log(`Pagos después de filtrar por propiedad: ${pagosFiltrados.length}`);
+      }
 
-      // Analizar servicios
+      // 🔥 PASO 4: Analizar servicios (LÓGICA ACTUALIZADA del reporte financiero)
       const analisis = {
-        total_pagos_analizados: pagosActivos.length,
+        total_pagos_analizados: pagosFiltrados.length,
         total_agua_consumida: 0,
         total_luz_consumida: 0,
         total_agua_condonada: 0,
@@ -97,18 +93,23 @@ const ServiciosDashboard = () => {
         por_propiedad: {}
       };
 
-      pagosActivos.forEach(pago => {
+      // 🔥 NUEVA LÓGICA: Igual que ReporteFinancieroGlobal
+      pagosFiltrados.forEach(pago => {
         if (pago.servicios) {
           const { 
             agua_lectura = 0, 
             luz_lectura = 0,
-            limite_agua_aplicado = 250,
-            limite_luz_aplicado = 250,
+            limite_agua_aplicado = LIMITE_AGUA_CONFIG,  // Usar config de Firestore
+            limite_luz_aplicado = LIMITE_LUZ_CONFIG,    // Usar config de Firestore
             excedentes_cobrados_de = 'deposito',
             excedentes_del_deposito = 0
           } = pago.servicios;
 
-          // Solo contar si hay consumo real (>0)
+          // ✅ CLAVE: Contar TODOS los pagos con servicios, incluso si consumo = 0
+          // Esto asegura que contemos correctamente las unidades
+          console.log(`📊 Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}`);
+          
+          // Solo incrementar si hay consumo REAL mayor a 0
           if (agua_lectura > 0 || luz_lectura > 0) {
             analisis.unidades_con_servicios++;
 
@@ -116,14 +117,15 @@ const ServiciosDashboard = () => {
             analisis.total_agua_consumida += agua_lectura;
             analisis.total_luz_consumida += luz_lectura;
 
-            // Calcular lo que se condonó (usó del límite)
+            // 🔥 CALCULAR LO CONDONADO (lo que NOSOTROS pagamos)
+            // Esto es lo que la propiedad absorbe hasta el límite
             const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
             const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
             
             analisis.total_agua_condonada += agua_condonada;
             analisis.total_luz_condonada += luz_condonada;
 
-            // Calcular excedentes
+            // Calcular excedentes (lo que el inquilino paga)
             const excedente_agua = Math.max(0, agua_lectura - limite_agua_aplicado);
             const excedente_luz = Math.max(0, luz_lectura - limite_luz_aplicado);
             
@@ -172,6 +174,8 @@ const ServiciosDashboard = () => {
                 luz_total: 0,
                 agua_condonada: 0,
                 luz_condonada: 0,
+                excedente_agua: 0,
+                excedente_luz: 0,
                 unidades: 0
               };
             }
@@ -180,15 +184,20 @@ const ServiciosDashboard = () => {
             analisis.por_propiedad[prefijo].luz_total += luz_lectura;
             analisis.por_propiedad[prefijo].agua_condonada += agua_condonada;
             analisis.por_propiedad[prefijo].luz_condonada += luz_condonada;
+            analisis.por_propiedad[prefijo].excedente_agua += excedente_agua;
+            analisis.por_propiedad[prefijo].excedente_luz += excedente_luz;
             analisis.por_propiedad[prefijo].unidades++;
           }
         }
       });
 
+      console.log('✅ Análisis completado:', analisis);
+      console.log(`📊 Resumen: ${analisis.unidades_con_servicios} unidades, Agua condonada: $${analisis.total_agua_condonada}, Luz condonada: $${analisis.total_luz_condonada}`);
+      
       setDatos(analisis);
-      setPagosDetalle(pagosActivos);
+      setPagosDetalle(pagosFiltrados);
     } catch (error) {
-      console.error('Error al analizar servicios:', error);
+      console.error('❌ Error al analizar servicios:', error);
       alert('Error al analizar servicios: ' + error.message);
     } finally {
       setLoading(false);
@@ -223,21 +232,20 @@ const ServiciosDashboard = () => {
   };
 
   return (
-    <>
-      {/* Header */}
-       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
-       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div>
-         <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-droplet"></i></span>
-              Dashboard de Servicios
+     <div className="w-full no-print">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <span className="text-2xl sm:text-3xl"><i className="fa-solid fa-users"></i></span>
+             Dashboard de Servicios
             </h1>
-       <p className="text-sm sm:text-base text-gray-500 mt-1">
-          Análisis de consumo de agua y luz por periodo
-        </p>
+            <p className="text-sm sm:text-base text-gray-500 mt-1">
+              Análisis de consumo de agua y luz por periodo
+            </p>
+          </div>
+        </div>
       </div>
-      </div>
-</div>
       {/* Filtros */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-xl font-semibold mb-4 text-gray-800">Filtros de Análisis</h2>
@@ -307,7 +315,7 @@ const ServiciosDashboard = () => {
         <button
           onClick={analizarServicios}
           disabled={loading || !periodoInicio}
-         className="w-full flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
+          className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
         >
           {loading ? 'Analizando...' : 'Analizar Servicios'}
         </button>
@@ -480,12 +488,20 @@ const ServiciosDashboard = () => {
                         <span className="font-semibold text-cyan-700">${prop.agua_condonada}</span>
                       </div>
                       <div className="flex justify-between">
+                        <span className="text-gray-600">Excedente agua:</span>
+                        <span className="font-semibold text-red-600">${prop.excedente_agua}</span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className="text-gray-600">Luz consumida:</span>
                         <span className="font-semibold text-yellow-600">${prop.luz_total}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600">Luz condonada:</span>
                         <span className="font-semibold text-yellow-700">${prop.luz_condonada}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Excedente luz:</span>
+                        <span className="font-semibold text-red-600">${prop.excedente_luz}</span>
                       </div>
                     </div>
                   </div>
@@ -579,9 +595,6 @@ const ServiciosDashboard = () => {
         </>
       )}
 
-      {/* Detalle de Pagos con Servicios */}
-      <ServiciosPagoDetalle />
-
       {datos && datos.unidades_con_servicios === 0 && (
         <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded">
           <div className="flex">
@@ -599,7 +612,7 @@ const ServiciosDashboard = () => {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };
 

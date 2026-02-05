@@ -51,27 +51,31 @@ const EstadoCuenta = ({ unidades, inquilinosMap, refrescar }) => {
             const qContratos = query(contratosRef, where('id_unidad', '==', unidad.id_unidad));
             const contratosDocs = await getDocs(qContratos);
 
-            let montoEsperado = 0;
-            let montoPagado = 0;
-            let deuda = 0;
-            let tieneInquilino = false;
-            let contratoActivoEnPeriodo = false;
+          let montoEsperado = 0;
+let montoPagado = 0;
+let deuda = 0;
+let tieneInquilino = false;
+let contratoActivoEnPeriodo = false;
 
-            if (contratosDocs.docs.length > 0) {
-              const contrato = contratosDocs.docs[0].data();
-              
-              // Verificar si el contrato estaba activo en el período consultado
-              const periodoInfo = contrato.periodos_esperados?.find(p => p.periodo === periodoStr);
-              
-              if (periodoInfo) {
-                // Si existe el período en periodos_esperados, significa que el contrato estaba activo
-                contratoActivoEnPeriodo = true;
-                tieneInquilino = true;
-                montoEsperado = Number(periodoInfo.monto_esperado || 0);
-                montoPagado = Number(periodoInfo.monto_pagado || 0);
-                deuda = Math.max(0, montoEsperado - montoPagado);
-              }
-            }
+if (contratosDocs.docs.length > 0) {
+  // 🔥 REVISAR TODOS LOS CONTRATOS, no solo el primero
+  for (const contratoDoc of contratosDocs.docs) {
+    const contrato = contratoDoc.data();
+    
+    // Verificar si ESTE contrato tiene el período consultado
+    const periodoInfo = contrato.periodos_esperados?.find(p => p.periodo === periodoStr);
+    
+    if (periodoInfo) {
+      // ✅ Encontramos el contrato correcto para este período
+      contratoActivoEnPeriodo = true;
+      tieneInquilino = true;
+      montoEsperado = Number(periodoInfo.monto_esperado || 0);
+      montoPagado = Number(periodoInfo.monto_pagado || 0);
+      deuda = Math.max(0, montoEsperado - montoPagado);
+      break; // Ya encontramos el contrato correcto, salimos del loop
+    }
+  }
+}
 
             // Usar el nombre del inquilino directamente de la unidad
             const nombreInquilino = contratoActivoEnPeriodo && unidad.nombre_inquilino 
