@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, doc, updateDoc, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, getDoc, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
 const MantenimientoForm = ({ unidadId, onSuccess }) => {
@@ -20,6 +20,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
 
   const [loading, setLoading] = useState(false);
   const [inquilinoInfo, setInquilinoInfo] = useState(null);
+  const [afectaInquilino, setAfectaInquilino] = useState(false);
 
   // Cargar información de la unidad cuando se selecciona
   useEffect(() => {
@@ -27,6 +28,15 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
       cargarInfoUnidad(formData.id_unidad);
     }
   }, [formData.id_unidad]);
+
+  // ⭐ VALIDAR SI AFECTA INQUILINO cuando cambia el periodo
+  useEffect(() => {
+    if (formData.periodo && inquilinoInfo) {
+      validarSiAfectaInquilino();
+    } else {
+      setAfectaInquilino(false);
+    }
+  }, [formData.periodo, inquilinoInfo]);
 
   const cargarInfoUnidad = async (unidadId) => {
     try {
@@ -42,7 +52,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
           id_propiedad: unidadData.id_propiedad || ''
         }));
 
-        // Verificar si tiene inquilino usando id_inquilino de la unidad
+        // Verificar si tiene inquilino activo
         if (unidadData.id_inquilino && unidadData.estado === 'Ocupado') {
           // Cargar información del inquilino
           const inquilinoRef = doc(db, 'inquilinos', unidadData.id_inquilino);
@@ -50,17 +60,22 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
           
           if (inquilinoSnap.exists()) {
             const inquilinoData = inquilinoSnap.data();
+            
             setInquilinoInfo({
               id: unidadData.id_inquilino,
               nombre_completo: inquilinoData.nombre_completo || unidadData.nombre_inquilino,
-              telefono_contacto: inquilinoData.telefono_contacto
+              telefono_contacto: inquilinoData.telefono_contacto,
+              fecha_inicio_contrato: inquilinoData.fecha_inicio_contrato,
+              fecha_fin_contrato: inquilinoData.fecha_fin_contrato,
+              id_contrato_actual: inquilinoData.id_contrato_actual
             });
           } else {
-            // Si no se encuentra el documento del inquilino, usar datos de la unidad
             setInquilinoInfo({
               id: unidadData.id_inquilino,
               nombre_completo: unidadData.nombre_inquilino || 'Inquilino sin nombre',
-              telefono_contacto: 'N/A'
+              telefono_contacto: 'N/A',
+              fecha_inicio_contrato: null,
+              fecha_fin_contrato: null
             });
           }
         } else {
@@ -69,6 +84,91 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
       }
     } catch (error) {
       console.error('Error al cargar info de unidad:', error);
+    }
+  };
+
+  /**
+   * ⭐ VALIDAR SI EL INQUILINO ESTARÁ PRESENTE EN EL PERIODO DEL MANTENIMIENTO
+   */
+  const validarSiAfectaInquilino = async () => {
+    if (!inquilinoInfo || !formData.periodo) {
+      setAfectaInquilino(false);
+      return;
+    }
+
+    try {
+      // Obtener año y mes del periodo del mantenimiento
+      const [anioMantenimiento, mesMantenimiento] = formData.periodo.split('-').map(Number);
+      
+      // Consultar el contrato activo de la unidad para obtener fechas precisas
+      if (inquilinoInfo.id_contrato_actual) {
+        const contratoRef = doc(db, 'contratos', inquilinoInfo.id_contrato_actual);
+        const contratoSnap = await getDoc(contratoRef);
+        
+        if (contratoSnap.exists()) {
+          const contratoData = contratoSnap.data();
+          
+          const fechaInicio = contratoData.fecha_inicio?.toDate ? 
+            contratoData.fecha_inicio.toDate() : new Date(contratoData.fecha_inicio);
+          const fechaFin = contratoData.fecha_fin?.toDate ? 
+            contratoData.fecha_fin.toDate() : new Date(contratoData.fecha_fin);
+          
+          const inicioAnio = fechaInicio.getFullYear();
+          const inicioMes = fechaInicio.getMonth() + 1; // 0-11 -> 1-12
+          const finAnio = fechaFin.getFullYear();
+          const finMes = fechaFin.getMonth() + 1;
+          
+          // Verificar si el periodo del mantenimiento está dentro del contrato
+          let periodoEnContrato = false;
+          
+          if (anioMantenimiento > inicioAnio && anioMantenimiento < finAnio) {
+            periodoEnContrato = true;
+          } else if (anioMantenimiento === inicioAnio && anioMantenimiento === finAnio) {
+            periodoEnContrato = mesMantenimiento >= inicioMes && mesMantenimiento <= finMes;
+          } else if (anioMantenimiento === inicioAnio) {
+            periodoEnContrato = mesMantenimiento >= inicioMes;
+          } else if (anioMantenimiento === finAnio) {
+            periodoEnContrato = mesMantenimiento <= finMes;
+          }
+          
+          setAfectaInquilino(periodoEnContrato);
+          return;
+        }
+      }
+      
+      // Fallback: usar fechas del inquilino si no hay contrato
+      if (inquilinoInfo.fecha_inicio_contrato && inquilinoInfo.fecha_fin_contrato) {
+        const fechaInicio = inquilinoInfo.fecha_inicio_contrato?.toDate ? 
+          inquilinoInfo.fecha_inicio_contrato.toDate() : new Date(inquilinoInfo.fecha_inicio_contrato);
+        const fechaFin = inquilinoInfo.fecha_fin_contrato?.toDate ? 
+          inquilinoInfo.fecha_fin_contrato.toDate() : new Date(inquilinoInfo.fecha_fin_contrato);
+        
+        const inicioAnio = fechaInicio.getFullYear();
+        const inicioMes = fechaInicio.getMonth() + 1;
+        const finAnio = fechaFin.getFullYear();
+        const finMes = fechaFin.getMonth() + 1;
+        
+        let periodoEnContrato = false;
+        
+        if (anioMantenimiento > inicioAnio && anioMantenimiento < finAnio) {
+          periodoEnContrato = true;
+        } else if (anioMantenimiento === inicioAnio && anioMantenimiento === finAnio) {
+          periodoEnContrato = mesMantenimiento >= inicioMes && mesMantenimiento <= finMes;
+        } else if (anioMantenimiento === inicioAnio) {
+          periodoEnContrato = mesMantenimiento >= inicioMes;
+        } else if (anioMantenimiento === finAnio) {
+          periodoEnContrato = mesMantenimiento <= finMes;
+        }
+        
+        setAfectaInquilino(periodoEnContrato);
+      } else {
+        // Si no hay fechas de contrato, asumir que sí afecta
+        setAfectaInquilino(true);
+      }
+      
+    } catch (error) {
+      console.error('Error validando periodo:', error);
+      setAfectaInquilino(false);
     }
   };
 
@@ -94,9 +194,9 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
         costo_real: 0,
         fecha_registro: Timestamp.fromDate(ahora),
         fecha_finalizacion: null,
-        // CORRECCIÓN: Detectar si afecta inquilino basado en si hay inquilinoInfo
-        afecta_inquilino: inquilinoInfo ? true : false,
-        id_inquilino_afectado: inquilinoInfo ? inquilinoInfo.id : null,
+        // ⭐ CAMBIO: Usar el estado calculado basado en el periodo
+        afecta_inquilino: afectaInquilino,
+        id_inquilino_afectado: afectaInquilino ? inquilinoInfo.id : null,
         notas: [],
         fotos_antes: [],
         fotos_despues: [],
@@ -138,11 +238,12 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
       });
 
       setInquilinoInfo(null);
+      setAfectaInquilino(false);
 
       if (onSuccess) onSuccess();
     } catch (error) {
       console.error('Error al registrar mantenimiento:', error);
-      alert('❌ Error al registrar mantenimiento: ' + error.message);
+      alert(' Error al registrar mantenimiento: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -154,7 +255,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <span className="text-2xl sm:text-3xl"><i class="fa-solid fa-wrench"></i></span>
+              <span className="text-2xl sm:text-3xl"><i className="fa-solid fa-wrench"></i></span>
               Registro de un nuevo mantenimiento
             </h1>
             <p className="text-sm sm:text-base text-gray-500 mt-1">
@@ -169,7 +270,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Información de Unidad */}
         <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-100">
-          <h3 className="font-semibold text-lg mb-3 text-blue-900"><i class="fa-solid fa-map-pin"></i> Información de Unidad</h3>
+          <h3 className="font-semibold text-lg mb-3 text-blue-900"><i className="fa-solid fa-map-pin"></i> Información de Unidad</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -203,30 +304,50 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
             </div>
           </div>
 
-          {/* Alerta si hay inquilino */}
-          {inquilinoInfo && (
-            <div className="mt-3 p-3 bg-yellow-50 border-2 border-yellow-300 rounded-lg flex items-start gap-3">
-              <span className="text-2xl">⚠️</span>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-yellow-900">
-                  Unidad Ocupada - Afecta a Inquilino
-                </p>
-                <p className="text-sm text-yellow-800 mt-1">
-                  Inquilino: <strong>{inquilinoInfo.nombre_completo}</strong>
-                </p>
-                {inquilinoInfo.telefono_contacto && inquilinoInfo.telefono_contacto !== 'N/A' && (
-                  <p className="text-xs text-yellow-700 mt-1">
-                    Tel: {inquilinoInfo.telefono_contacto}
+          {/* ⭐ Alerta DINÁMICA basada en el periodo */}
+          {inquilinoInfo && formData.periodo && (
+            afectaInquilino ? (
+              <div className="mt-3 p-3 bg-yellow-50 border-2 border-yellow-300 rounded-lg flex items-start gap-3">
+                <span className="text-2xl"></span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-yellow-900">
+                    Unidad Ocupada en el Periodo Seleccionado
                   </p>
-                )}
+                  <p className="text-sm text-yellow-800 mt-1">
+                    Inquilino: <strong>{inquilinoInfo.nombre_completo}</strong>
+                  </p>
+                  <p className="text-xs text-yellow-700 mt-1">
+                    Este mantenimiento afectará al inquilino durante {formData.periodo}
+                  </p>
+                  {inquilinoInfo.telefono_contacto && inquilinoInfo.telefono_contacto !== 'N/A' && (
+                    <p className="text-xs text-yellow-700 mt-1">
+                      Tel: {inquilinoInfo.telefono_contacto}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-3 p-3 bg-green-50 border-2 border-green-300 rounded-lg flex items-start gap-3">
+                <span className="text-2xl"></span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-green-900">
+                    Unidad Disponible en el Periodo Seleccionado
+                  </p>
+                  <p className="text-sm text-green-800 mt-1">
+                    Aunque la unidad está ocupada actualmente, el inquilino <strong>{inquilinoInfo.nombre_completo}</strong> ya no estará presente en {formData.periodo}
+                  </p>
+                  <p className="text-xs text-green-700 mt-1">
+                    Este mantenimiento NO afectará al inquilino
+                  </p>
+                </div>
+              </div>
+            )
           )}
 
           {/* Alerta si NO hay inquilino */}
           {formData.id_unidad && !inquilinoInfo && (
             <div className="mt-3 p-3 bg-green-50 border-2 border-green-300 rounded-lg flex items-start gap-3">
-              <span className="text-2xl">✅</span>
+              <span className="text-2xl"></span>
               <div className="flex-1">
                 <p className="text-sm font-bold text-green-900">
                   Unidad Disponible
@@ -237,11 +358,26 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
               </div>
             </div>
           )}
+
+          {/* Alerta si falta seleccionar periodo */}
+          {inquilinoInfo && !formData.periodo && (
+            <div className="mt-3 p-3 bg-blue-50 border-2 border-blue-300 rounded-lg flex items-start gap-3">
+              <span className="text-2xl">ℹ️</span>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-blue-900">
+                  Selecciona el Periodo del Mantenimiento
+                </p>
+                <p className="text-sm text-blue-800 mt-1">
+                  Una vez que selecciones el periodo, se validará si afecta al inquilino <strong>{inquilinoInfo.nombre_completo}</strong>
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Detalles del Mantenimiento */}
         <div className="bg-gray-50 p-4 rounded-lg border-2 border-gray-200">
-          <h3 className="font-semibold text-lg mb-3 text-gray-900"><i class="fa-solid fa-file"></i> Detalles del Mantenimiento</h3>
+          <h3 className="font-semibold text-lg mb-3 text-gray-900"><i className="fa-solid fa-file"></i> Detalles del Mantenimiento</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
@@ -348,7 +484,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Periodo de Mantenimiento *
+                Periodo de Mantenimiento * <span className="text-xs text-blue-600">(Se valida vs fechas del contrato)</span>
               </label>
               <input
                 type="month"
@@ -364,7 +500,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
 
         {/* Información del Responsable */}
         <div className="bg-green-50 p-4 rounded-lg border-2 border-green-200">
-          <h3 className="font-semibold text-lg mb-3 text-green-900"><i class="fa-solid fa-user-check"></i> Responsable del Trabajo</h3>
+          <h3 className="font-semibold text-lg mb-3 text-green-900"><i className="fa-solid fa-user-check"></i> Responsable del Trabajo</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -409,21 +545,35 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
               className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
             />
             <label htmlFor="requiere_entrada" className="ml-2 block text-sm font-medium text-gray-700">
-              <i class="fa-solid fa-key"></i> Requiere entrada a la unidad
+              <i className="fa-solid fa-key"></i> Requiere entrada a la unidad
             </label>
           </div>
         </div>
 
-        {/* Resumen antes de guardar */}
-        {inquilinoInfo && (
-          <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-4">
-            <p className="text-sm font-bold text-amber-900 mb-2">
+        {/* ⭐ Resumen dinámico antes de guardar */}
+        {formData.periodo && (
+          <div className={`border-2 rounded-lg p-4 ${
+            afectaInquilino ? 'bg-amber-50 border-amber-300' : 'bg-blue-50 border-blue-300'
+          }`}>
+            <p className={`text-sm font-bold mb-2 ${
+              afectaInquilino ? 'text-amber-900' : 'text-blue-900'
+            }`}>
               📌 Resumen del Registro:
             </p>
-            <ul className="text-sm text-amber-800 space-y-1">
-              <li>• <strong>Afecta a inquilino:</strong> SÍ</li>
-              <li>• <strong>Inquilino afectado:</strong> {inquilinoInfo.nombre_completo}</li>
-              <li>• <strong>ID del inquilino:</strong> {inquilinoInfo.id}</li>
+            <ul className={`text-sm space-y-1 ${
+              afectaInquilino ? 'text-amber-800' : 'text-blue-800'
+            }`}>
+              <li>• <strong>Periodo del mantenimiento:</strong> {formData.periodo}</li>
+              <li>• <strong>Afecta a inquilino:</strong> {afectaInquilino ? 'SÍ' : 'NO'}</li>
+              {afectaInquilino && inquilinoInfo && (
+                <>
+                  <li>• <strong>Inquilino afectado:</strong> {inquilinoInfo.nombre_completo}</li>
+                  <li>• <strong>ID del inquilino:</strong> {inquilinoInfo.id}</li>
+                </>
+              )}
+              {!afectaInquilino && inquilinoInfo && (
+                <li>• <strong>Motivo:</strong> El inquilino {inquilinoInfo.nombre_completo} no estará presente en ese periodo</li>
+              )}
             </ul>
           </div>
         )}
@@ -433,7 +583,7 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
           <button
             type="submit"
             disabled={loading}
-           className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
+            className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all shadow-sm text-sm sm:text-base"
           >
             {loading ? ' Registrando...' : ' Registrar Mantenimiento'}
           </button>

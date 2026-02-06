@@ -198,16 +198,33 @@ export const getDatosDashboard = async (periodoActual) => {
     const inicioStr = esRango ? periodoActual.inicio.slice(0, 7) : (typeof periodoActual === 'string' ? periodoActual : new Date().toISOString().slice(0, 7));
     const finStr = esRango ? periodoActual.fin.slice(0, 7) : inicioStr;
 
-    const [uSnap, iSnap, pSnap] = await Promise.all([
+    console.log("🔍 DEBUG - Periodo solicitado:", { inicioStr, finStr, esRango });
+
+    // Consultar CONTRATOS ACTIVOS
+    const [uSnap, contratosSnap, pSnap] = await Promise.all([
       getDocs(collection(db, "unidades")),
-      getDocs(query(collection(db, "inquilinos"), where("activo", "==", true))),
+      getDocs(query(collection(db, "contratos"), where("estatus", "==", "activo"))),
       getDocs(collection(db, "pagos"))
     ]);
 
-    const inqsMap = {};
-    iSnap.forEach(doc => { inqsMap[doc.id] = { id: doc.id, ...doc.data() }; });
+    console.log("🔍 DEBUG - Contratos activos encontrados:", contratosSnap.size);
+    
+    // Crear mapa de contratos activos
+    const contratosMap = {};
+    contratosSnap.forEach(doc => {
+      const contrato = { id: doc.id, ...doc.data() };
+      contratosMap[contrato.id_unidad] = contrato;
+      console.log("📄 Contrato:", {
+        id: contrato.id,
+        unidad: contrato.id_unidad,
+        inquilino: contrato.nombre_inquilino,
+        renta: contrato.monto_renta,
+        inicio: contrato.fecha_inicio?.toDate ? contrato.fecha_inicio.toDate() : contrato.fecha_inicio,
+        fin: contrato.fecha_fin?.toDate ? contrato.fecha_fin.toDate() : contrato.fecha_fin
+      });
+    });
 
-    // 2. Crear meses a evaluar sin errores de zona horaria
+    // Crear meses a evaluar
     const mesesAEvaluar = [];
     let [startAnio, startMes] = inicioStr.split('-').map(Number);
     let [endAnio, endMes] = finStr.split('-').map(Number);
@@ -220,11 +237,19 @@ export const getDatosDashboard = async (periodoActual) => {
       fechaInicio.setMonth(fechaInicio.getMonth() + 1);
     }
 
-    // 3. ⭐ EL MAPA DE PAGOS: Solo sumar si NO está condonado
+    console.log("📅 Meses a evaluar:", mesesAEvaluar);
+
+    // Mapa de pagos
     const pagosLookup = {};
+    const condonadosSet = new Set();
+    
     pSnap.docs.forEach(doc => {
       const p = doc.data();
-      if (p.condonado === true) return;
+      
+      if (p.condonado === true) {
+        condonadosSet.add(`${p.id_unidad}_${p.periodo}`);
+        return;
+      }
 
       const key = `${p.id_unidad}_${p.periodo}`;
       if (!pagosLookup[key]) {
@@ -234,39 +259,67 @@ export const getDatosDashboard = async (periodoActual) => {
         };
       }
       pagosLookup[key].monto_acumulado += Number(p.monto_pagado || 0);
-      // Mantener siempre el total esperado más alto (por si hubo servicios)
       if (Number(p.total_esperado_periodo) > pagosLookup[key].total_esperado) {
         pagosLookup[key].total_esperado = Number(p.total_esperado_periodo);
       }
     });
 
-    // 4. EL MAPA DE CONDONACIONES (Para excluir rápido)
-    const condonadosSet = new Set();
-    pSnap.docs.forEach(doc => {
-      if (doc.data().condonado === true) {
-        condonadosSet.add(`${doc.data().id_unidad}_${doc.data().periodo}`);
-      }
-    });
-
-    const ocupadas = uSnap.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(u => u.id_inquilino && inqsMap[u.id_inquilino]);
+    console.log("💰 Pagos registrados:", pagosLookup);
+    console.log("✅ Condonados:", Array.from(condonadosSet));
 
     const listaAdeudosDesglosada = [];
     let totalEsperadoGlobal = 0;
     let totalPagadoGlobal = 0;
 
-    // 5. PROCESAMIENTO MES POR MES
+    // PROCESAMIENTO MES POR MES
     mesesAEvaluar.forEach(mes => {
-      ocupadas.forEach(u => {
-        const inq = inqsMap[u.id_inquilino];
-        const validacionContrato = inquilinoTeniaContratoEnPeriodo(inq, mes);
+      console.log(`\n🗓️ Procesando mes: ${mes}`);
+      
+      Object.values(contratosMap).forEach(contrato => {
+        // Validar si el periodo está dentro del rango del contrato
+        const [anioPeriodo, mesPeriodo] = mes.split('-').map(Number);
+        const fechaInicio = contrato.fecha_inicio?.toDate ? 
+          contrato.fecha_inicio.toDate() : new Date(contrato.fecha_inicio);
+        const fechaFin = contrato.fecha_fin?.toDate ? 
+          contrato.fecha_fin.toDate() : new Date(contrato.fecha_fin);
         
-        if (!validacionContrato.activo) return;
-        if (condonadosSet.has(`${u.id}_${mes}`)) return; // Ignorar si está condonado
+        const inicioAnio = fechaInicio.getFullYear();
+        const inicioMes = fechaInicio.getMonth() + 1;
+        const finAnio = fechaFin.getFullYear();
+        const finMes = fechaFin.getMonth() + 1;
 
-        const registroMes = pagosLookup[`${u.id}_${mes}`];
-        const rentaOriginal = Number(inq.renta_actual || u.renta_mensual || 0);
+        console.log(`  📋 Evaluando ${contrato.id_unidad} - ${contrato.nombre_inquilino}`);
+        console.log(`     Contrato: ${inicioAnio}-${inicioMes} hasta ${finAnio}-${finMes}`);
+        console.log(`     Periodo evaluado: ${anioPeriodo}-${mesPeriodo}`);
+
+        // Verificar si el periodo está dentro del contrato
+        let periodoEnContrato = false;
+        
+        if (anioPeriodo > inicioAnio && anioPeriodo < finAnio) {
+          periodoEnContrato = true;
+        } else if (anioPeriodo === inicioAnio && anioPeriodo === finAnio) {
+          periodoEnContrato = mesPeriodo >= inicioMes && mesPeriodo <= finMes;
+        } else if (anioPeriodo === inicioAnio) {
+          periodoEnContrato = mesPeriodo >= inicioMes;
+        } else if (anioPeriodo === finAnio) {
+          periodoEnContrato = mesPeriodo <= finMes;
+        }
+
+        console.log(`     ¿En contrato? ${periodoEnContrato}`);
+
+        if (!periodoEnContrato) {
+          console.log(`     ❌ FUERA DE CONTRATO`);
+          return;
+        }
+        
+        const key = `${contrato.id_unidad}_${mes}`;
+        if (condonadosSet.has(key)) {
+          console.log(`     ✅ CONDONADO`);
+          return;
+        }
+
+        const registroMes = pagosLookup[key];
+        const rentaOriginal = Number(contrato.monto_renta || 0);
         
         const pagado = registroMes ? registroMes.monto_acumulado : 0;
         const esperado = (registroMes && registroMes.total_esperado > 0) 
@@ -275,28 +328,60 @@ export const getDatosDashboard = async (periodoActual) => {
         
         const pendiente = Math.max(0, esperado - pagado);
 
-        // Sumatoria para los cuadros de resumen
+        console.log(`     💵 Esperado: $${esperado}, Pagado: $${pagado}, Pendiente: $${pendiente}`);
+
+        // Sumatoria para stats
         totalEsperadoGlobal += esperado;
         totalPagadoGlobal += pagado;
 
-        // ⭐ SOLO agregar a la tabla si hay deuda real en ESTE mes específico
+        // Agregar a la lista si hay deuda
         if (pendiente > 0) {
+          const hoy = new Date();
+          const contratoFinalizado = fechaFin < hoy;
+          
+          console.log(`     ⚠️ ADEUDO AGREGADO A LA LISTA`);
+          
           listaAdeudosDesglosada.push({
-            id: `${u.id}_${mes}`,
-            id_unidad: u.id,
-            id_inquilino: u.id_inquilino,
-            periodo: mes, 
-            nombre: inq.nombre_completo,
+            id: `${contrato.id_unidad}_${mes}`,
+            id_unidad: contrato.id_unidad,
+            id_inquilino: contrato.id_inquilino,
+            periodo: mes,
+            nombre: contrato.nombre_inquilino,
+            nombre_completo: contrato.nombre_inquilino,
             monto: pendiente,
             monto_pagado: pagado,
+            saldo_restante_periodo: pendiente,
             total_esperado_periodo: esperado,
             estatus: pagado > 0 ? 'parcial' : 'pendiente',
-            id_contrato: inq.id_contrato_actual || u.id_contrato_actual,
-            dia_pago: inq.dia_pago || 5,
-            contratoFinalizado: validacionContrato.finalizado
+            id_contrato: contrato.id,
+            dia_pago: contrato.dia_pago || 5,
+            contratoFinalizado: contratoFinalizado
           });
+        } else {
+          console.log(`     ✓ Sin adeudo`);
         }
       });
+    });
+
+    console.log("\n📊 RESUMEN FINAL:");
+    console.log("Total esperado:", totalEsperadoGlobal);
+    console.log("Total pagado:", totalPagadoGlobal);
+    console.log("Total adeudo:", totalEsperadoGlobal - totalPagadoGlobal);
+    console.log("Adeudos en lista:", listaAdeudosDesglosada.length);
+    console.log("Detalle de adeudos:", listaAdeudosDesglosada);
+
+    // Crear mapa de inquilinos
+    const inquilinosMap = {};
+    contratosSnap.forEach(doc => {
+      const c = doc.data();
+      if (c.id_inquilino) {
+        inquilinosMap[c.id_inquilino] = {
+          id: c.id_inquilino,
+          nombre_completo: c.nombre_inquilino,
+          renta_actual: c.monto_renta,
+          dia_pago: c.dia_pago
+        };
+      }
     });
 
     return {
@@ -309,12 +394,17 @@ export const getDatosDashboard = async (periodoActual) => {
       unidades: uSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        nombre_inquilino: inqsMap[doc.data().id_inquilino]?.nombre_completo || "Libre"
+        nombre_inquilino: contratosMap[doc.id]?.nombre_inquilino || "Libre"
       })),
-      inquilinosMap: inqsMap
+      inquilinosMap: inquilinosMap
     };
   } catch (error) {
-    console.error("Error Dashboard:", error);
-    return { stats: { esperado: 0, pagado: 0, adeudo: 0 }, listaAdeudos: [], unidades: [], inquilinosMap: {} };
+    console.error("❌ Error Dashboard:", error);
+    return { 
+      stats: { esperado: 0, pagado: 0, adeudo: 0 }, 
+      listaAdeudos: [], 
+      unidades: [], 
+      inquilinosMap: {} 
+    };
   }
 };

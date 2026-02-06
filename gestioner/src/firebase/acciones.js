@@ -658,3 +658,90 @@ export const renovarContratoInquilino = async (idInquilino, idUnidad, nuevosDato
     return { success: true };
   } catch (e) { console.error(e); throw e; }
 };
+/**
+ * Valida que no haya solapamiento de fechas con otros contratos EN LA MISMA UNIDAD
+ * @param {string} idUnidad - ID de la unidad
+ * @param {Date|string} fechaInicio - Fecha de inicio del nuevo contrato
+ * @param {Date|string} fechaFin - Fecha de fin del nuevo contrato
+ * @param {string} idContratoActual - ID del contrato que se está editando (opcional)
+ * @returns {Promise<{valido: boolean, error?: string, message?: string, contratosConflicto?: Array}>}
+ */
+export const validarSolapamientoContratos = async (idUnidad, fechaInicio, fechaFin, idContratoActual = null) => {
+  try {
+    // Convertir a objetos Date si vienen como strings
+    const inicio = typeof fechaInicio === 'string' ? new Date(fechaInicio + 'T00:00:00') : fechaInicio;
+    const fin = typeof fechaFin === 'string' ? new Date(fechaFin + 'T23:59:59') : fechaFin;
+
+    // Validación básica: fecha de inicio debe ser anterior a fecha de fin
+    if (inicio >= fin) {
+      return {
+        valido: false,
+        error: "FECHAS_INVALIDAS",
+        message: "La fecha de inicio debe ser anterior a la fecha de fin"
+      };
+    }
+
+    // 🔍 Consultar TODOS los contratos de ESTA UNIDAD específica
+    const contratosRef = collection(db, "contratos");
+    const q = query(contratosRef, where("id_unidad", "==", idUnidad));
+    const snapshot = await getDocs(q);
+
+    const contratosConflicto = [];
+
+    snapshot.forEach(doc => {
+      const contrato = doc.data();
+      const contratoId = doc.id;
+
+      // Si estamos editando, excluir el contrato actual de la validación
+      if (idContratoActual && contratoId === idContratoActual) {
+        return;
+      }
+
+      // Obtener fechas del contrato existente
+      const contratoInicio = contrato.fecha_inicio?.toDate ? 
+        contrato.fecha_inicio.toDate() : new Date(contrato.fecha_inicio);
+      const contratoFin = contrato.fecha_fin?.toDate ? 
+        contrato.fecha_fin.toDate() : new Date(contrato.fecha_fin);
+
+      // Verificar solapamiento
+      // Dos rangos se solapan si:
+      // - El inicio del nuevo está entre el inicio y fin del existente, O
+      // - El fin del nuevo está entre el inicio y fin del existente, O
+      // - El nuevo contiene completamente al existente
+      const haySolapamiento = (
+        (inicio >= contratoInicio && inicio <= contratoFin) || // Inicio dentro del rango
+        (fin >= contratoInicio && fin <= contratoFin) ||       // Fin dentro del rango
+        (inicio <= contratoInicio && fin >= contratoFin)       // Contiene al existente
+      );
+
+      if (haySolapamiento) {
+        contratosConflicto.push({
+          id: contratoId,
+          inquilino: contrato.nombre_inquilino,
+          inicio: contratoInicio,
+          fin: contratoFin,
+          estatus: contrato.estatus
+        });
+      }
+    });
+
+    if (contratosConflicto.length > 0) {
+      return {
+        valido: false,
+        error: "SOLAPAMIENTO_CONTRATOS",
+        message: `Las fechas se solapan con ${contratosConflicto.length} contrato(s) existente(s) en la unidad ${idUnidad}`,
+        contratosConflicto: contratosConflicto
+      };
+    }
+
+    return { valido: true };
+
+  } catch (error) {
+    console.error("Error validando solapamiento:", error);
+    return {
+      valido: false,
+      error: "ERROR_VALIDACION",
+      message: "Error al validar fechas: " + error.message
+    };
+  }
+};

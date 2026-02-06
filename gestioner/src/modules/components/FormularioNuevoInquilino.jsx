@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { registrarNuevoInquilino, actualizarInquilino } from '../../firebase/acciones'; 
+import { registrarNuevoInquilino, actualizarInquilino, validarSolapamientoContratos } from '../../firebase/acciones'; 
 
 const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) => {
   const [loading, setLoading] = useState(false);
@@ -32,54 +32,50 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
   };
 
   useEffect(() => {
-  const cargarDatosInquilino = async () => {
-    if (esEdicion && unidad?.id_inquilino) {
-      setLoading(true);
-      try {
-        // 1. Obtener datos del Inquilino
-        const inqSnap = await getDoc(doc(db, "inquilinos", unidad.id_inquilino));
-        
-        if (inqSnap.exists()) {
-          const d = inqSnap.data();
-          let depositoVivo = d.deposito_garantia_inicial; // Valor por defecto
+    const cargarDatosInquilino = async () => {
+      if (esEdicion && unidad?.id_inquilino) {
+        setLoading(true);
+        try {
+          const inqSnap = await getDoc(doc(db, "inquilinos", unidad.id_inquilino));
+          
+          if (inqSnap.exists()) {
+            const d = inqSnap.data();
+            let depositoVivo = d.deposito_garantia_inicial;
 
-          // 2. OBTENER EL DEPÓSITO ACTUAL DEL CONTRATO (El cambio clave)
-          if (d.id_contrato_actual) {
-            const contratoSnap = await getDoc(doc(db, "contratos", d.id_contrato_actual));
-            if (contratoSnap.exists()) {
-              // Leemos monto_deposito que es el que se actualiza con los excedentes
-              depositoVivo = contratoSnap.data().monto_deposito;
+            if (d.id_contrato_actual) {
+              const contratoSnap = await getDoc(doc(db, "contratos", d.id_contrato_actual));
+              if (contratoSnap.exists()) {
+                depositoVivo = contratoSnap.data().monto_deposito;
+              }
             }
+
+            const fmt = (f) => f?.seconds ? f.toDate().toISOString().split('T')[0] : f;
+
+            setFormData({
+              nombre_completo: d.nombre_completo || "",
+              telefono_contacto: d.telefono_contacto || "",
+              telefono_emergencia: d.telefono_emergencia || "",
+              deposito_garantia_inicial: depositoVivo || 0, 
+              dia_pago: d.dia_pago || 5,
+              renta_actual: d.renta_actual || 0,
+              fecha_inicio_contrato: fmt(d.fecha_inicio_contrato),
+              fecha_fin_contrato: fmt(d.fecha_fin_contrato),
+              no_personas: d.no_personas || 1,
+              docs: d.docs || { ine: "no", carta: "no", contrato: "no" },
+              acompanantes: d.acompanantes || [],
+              id_contrato_actual: d.id_contrato_actual || "",
+              activo: true
+            });
           }
-
-          const fmt = (f) => f?.seconds ? f.toDate().toISOString().split('T')[0] : f;
-
-          setFormData({
-            nombre_completo: d.nombre_completo || "",
-            telefono_contacto: d.telefono_contacto || "",
-            telefono_emergencia: d.telefono_emergencia || "",
-            // ⭐ CAMBIO: Ahora usamos el valor del contrato, no el histórico del inquilino
-            deposito_garantia_inicial: depositoVivo || 0, 
-            dia_pago: d.dia_pago || 5,
-            renta_actual: d.renta_actual || 0,
-            fecha_inicio_contrato: fmt(d.fecha_inicio_contrato),
-            fecha_fin_contrato: fmt(d.fecha_fin_contrato),
-            no_personas: d.no_personas || 1,
-            docs: d.docs || { ine: "no", carta: "no", contrato: "no" },
-            acompanantes: d.acompanantes || [],
-            id_contrato_actual: d.id_contrato_actual || "",
-            activo: true
-          });
+        } catch (error) {
+          console.error("Error cargando inquilino:", error);
+        } finally {
+          setLoading(false);
         }
-      } catch (error) {
-        console.error("Error cargando inquilino:", error);
-      } finally {
-        setLoading(false);
       }
-    }
-  };
-  cargarDatosInquilino();
-}, [esEdicion, unidad]);
+    };
+    cargarDatosInquilino();
+  }, [esEdicion, unidad]);
 
   const handleAddAcompanante = () => {
     setFormData(prev => ({
@@ -115,6 +111,74 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
     setLoading(true);
     setErrorValidacion(null);
 
+    // ⭐ VALIDACIÓN 1: Renta debe ser mayor a 0
+    if (parseFloat(formData.renta_actual) <= 0) {
+      setErrorValidacion({
+        error: "RENTA_INVALIDA",
+        message: "La renta mensual debe ser mayor a $0",
+        detalles: {
+          sugerencia: "Ingresa el monto de renta acordado con el inquilino"
+        }
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ⭐ VALIDACIÓN 2: Depósito debe ser mayor a 0
+    if (parseFloat(formData.deposito_garantia_inicial) <= 0) {
+      setErrorValidacion({
+        error: "DEPOSITO_INVALIDO",
+        message: "El depósito de garantía debe ser mayor a $0",
+        detalles: {
+          sugerencia: "Ingresa el monto del depósito de garantía acordado"
+        }
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ⭐ VALIDACIÓN 3: Verificar fechas completas
+    if (!formData.fecha_inicio_contrato || !formData.fecha_fin_contrato) {
+      setErrorValidacion({
+        error: "FECHAS_INCOMPLETAS",
+        message: "Debes ingresar tanto la fecha de inicio como la fecha de fin del contrato",
+        detalles: {
+          sugerencia: "Completa ambas fechas antes de continuar"
+        }
+      });
+      setLoading(false);
+      return;
+    }
+
+    // ⭐ VALIDACIÓN 4: Verificar solapamiento de fechas (SOLO en la misma unidad)
+    try {
+      const validacion = await validarSolapamientoContratos(
+        unidad.id,
+        formData.fecha_inicio_contrato,
+        formData.fecha_fin_contrato,
+        formData.id_contrato_actual // Solo cuando estamos editando
+      );
+
+      if (!validacion.valido) {
+        setErrorValidacion({
+          error: validacion.error,
+          message: validacion.message || validacion.error,
+          detalles: {
+            contratosConflicto: validacion.contratosConflicto,
+            sugerencia: "Ajusta las fechas para que no se solapen con contratos existentes en esta unidad"
+          }
+        });
+        setLoading(false);
+        return;
+      }
+    } catch (error) {
+      console.error("Error en validación de fechas:", error);
+      alert("❌ Error al validar fechas: " + error.message);
+      setLoading(false);
+      return;
+    }
+
+    // ⭐ PROCEDER CON EL GUARDADO
     try {
       let resultado;
       
@@ -124,7 +188,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         resultado = await registrarNuevoInquilino(unidad.id, formData);
       }
 
-      // Si hay error de validación específico, mostrarlo
+      // Validaciones de respuesta del backend
       if (resultado && resultado.error === "NO_SE_PUEDE_MODIFICAR_FECHAS") {
         setErrorValidacion(resultado);
         return;
@@ -135,12 +199,10 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         return;
       }
 
-      // Si resultado tiene success: false Y tiene un mensaje de error, lanzar excepción
       if (resultado && resultado.success === false && resultado.message) {
         throw new Error(resultado.message);
       }
 
-      // En cualquier otro caso (success: true, o sin propiedad success), considerar éxito
       alert("✅ Guardado correctamente");
       onExito();
     } catch (error) {
@@ -166,18 +228,61 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         <button onClick={onCancelar} disabled={loading} className="text-gray-400 hover:text-red-500 font-bold">✖</button>
       </div>
 
+      {/* ⭐ PANEL DE ERRORES DE VALIDACIÓN */}
       {errorValidacion && (
         <div className="mb-6 bg-red-50 border-2 border-red-500 rounded-xl p-4 animate-in slide-in-from-top-2 duration-300">
           <div className="flex items-start gap-3">
             <span className="text-3xl">🚨</span>
             <div className="flex-1">
               <h4 className="text-sm font-black text-red-700 uppercase mb-2">
-                No se pueden modificar las fechas del contrato
+                {errorValidacion.error === "RENTA_INVALIDA" && "Renta inválida"}
+                {errorValidacion.error === "DEPOSITO_INVALIDO" && "Depósito inválido"}
+                {errorValidacion.error === "FECHAS_INCOMPLETAS" && "Fechas incompletas"}
+                {errorValidacion.error === "SOLAPAMIENTO_CONTRATOS" && "⚠️ Conflicto de fechas detectado"}
+                {errorValidacion.error === "NO_SE_PUEDE_MODIFICAR_FECHAS" && "No se pueden modificar las fechas del contrato"}
+                {errorValidacion.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO" && "No se puede modificar el depósito"}
+                {!errorValidacion.error && "Error de validación"}
               </h4>
               <p className="text-xs text-red-600 mb-3">
                 {errorValidacion.message}
               </p>
               
+              {/* Mostrar contratos en conflicto */}
+              {errorValidacion.detalles?.contratosConflicto && (
+                <div className="bg-white rounded-lg p-3 border border-red-200 mb-3">
+                  <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
+                    📋 Contratos que se solapan en la unidad {unidad.id}:
+                  </p>
+                  <div className="space-y-2">
+                    {errorValidacion.detalles.contratosConflicto.map((c, idx) => (
+                      <div key={idx} className="bg-red-50 p-3 rounded border border-red-200">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-xs font-bold text-red-700">
+                            👤 {c.inquilino}
+                          </span>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-black ${
+                            c.estatus === 'activo' ? 'bg-green-100 text-green-700' : 
+                            c.estatus === 'finalizado' ? 'bg-gray-100 text-gray-600' : 
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            {c.estatus.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-600 font-medium">
+                          📅 {c.inicio.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })} 
+                          {' → '}
+                          {c.fin.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </p>
+                        <p className="text-[9px] text-gray-400 italic mt-1">
+                          ID: {c.id.slice(-8)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Detalles de depósito */}
               {errorValidacion.detalles?.deposito_actual !== undefined && (
                 <div className="bg-white rounded-lg p-3 border border-red-200 mb-3">
                   <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
@@ -194,6 +299,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 </div>
               )}
 
+              {/* Periodos afectados */}
               {errorValidacion.detalles?.periodos_afectados && (
                 <div className="bg-white rounded-lg p-3 border border-red-200">
                   <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
@@ -212,6 +318,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 </div>
               )}
 
+              {/* Sugerencia */}
               <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-2">
                 <p className="text-[10px] font-bold text-amber-700">
                   💡 {errorValidacion.detalles?.sugerencia}
@@ -229,26 +336,58 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         </div>
       )}
 
+      {/* FORMULARIO */}
       <div className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-1">
             <label className="text-[10px] font-black text-gray-400 uppercase">Nombre Completo</label>
-            <input required name="nombre_completo" value={formData.nombre_completo} disabled={loading} className="w-full p-2 bg-gray-50 border rounded-lg font-bold outline-blue-500" onChange={handleChange} />
+            <input 
+              required 
+              name="nombre_completo" 
+              value={formData.nombre_completo} 
+              disabled={loading} 
+              className="w-full p-2 bg-gray-50 border rounded-lg font-bold outline-blue-500" 
+              onChange={handleChange} 
+            />
           </div>
           <div>
             <label className="text-[10px] font-black text-gray-400 uppercase">Tel. Contacto</label>
-            <input required name="telefono_contacto" value={formData.telefono_contacto} disabled={loading} className="w-full p-2 bg-gray-50 border rounded-lg outline-blue-500" onChange={handleChange} />
+            <input 
+              required 
+              name="telefono_contacto" 
+              value={formData.telefono_contacto} 
+              disabled={loading} 
+              className="w-full p-2 bg-gray-50 border rounded-lg outline-blue-500" 
+              onChange={handleChange} 
+            />
           </div>
           <div>
             <label className="text-[10px] font-black text-gray-400 uppercase">Tel. Emergencia</label>
-            <input name="telefono_emergencia" value={formData.telefono_emergencia} disabled={loading} className="w-full p-2 bg-gray-50 border rounded-lg outline-blue-500" onChange={handleChange} />
+            <input 
+              name="telefono_emergencia" 
+              value={formData.telefono_emergencia} 
+              disabled={loading} 
+              className="w-full p-2 bg-gray-50 border rounded-lg outline-blue-500" 
+              onChange={handleChange} 
+            />
           </div>
         </div>
 
         <div className={`grid grid-cols-1 md:grid-cols-4 gap-4 p-4 rounded-lg border ${esEdicion ? 'bg-amber-50 border-amber-100' : 'bg-blue-50 border-blue-100'}`}>
           <div>
             <label className={`text-[10px] font-black uppercase ${esEdicion ? 'text-amber-600' : 'text-blue-500'}`}>Renta Acordada</label>
-            <input type="number" name="renta_actual" disabled={loading} value={formData.renta_actual} className={`w-full p-2 border-0 rounded-lg font-bold shadow-sm ${esEdicion ? 'text-amber-700' : 'text-blue-600'}`} onChange={handleChange} />
+            <input 
+              type="number" 
+              name="renta_actual" 
+              disabled={loading} 
+              value={formData.renta_actual} 
+              className={`w-full p-2 border-0 rounded-lg font-bold shadow-sm ${
+                errorValidacion?.error === "RENTA_INVALIDA" 
+                  ? 'bg-red-100 text-red-700 ring-2 ring-red-500' 
+                  : esEdicion ? 'text-amber-700' : 'text-blue-600'
+              }`} 
+              onChange={handleChange} 
+            />
           </div>
           <div>
             <label className={`text-[10px] font-black uppercase ${esEdicion ? 'text-amber-600' : 'text-blue-500'}`}>Depósito</label>
@@ -258,7 +397,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               disabled={loading} 
               value={formData.deposito_garantia_inicial} 
               className={`w-full p-2 border-0 rounded-lg font-bold shadow-sm ${
-                errorValidacion?.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO" 
+                errorValidacion?.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO" || errorValidacion?.error === "DEPOSITO_INVALIDO"
                   ? 'bg-red-100 text-red-700 ring-2 ring-red-500' 
                   : esEdicion ? 'text-amber-700' : 'text-blue-600'
               }`} 
@@ -267,11 +406,25 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
           </div>
           <div>
             <label className="text-[10px] font-black text-red-500 uppercase italic">Día de Pago</label>
-            <input type="number" name="dia_pago" disabled={loading} value={formData.dia_pago} className="w-full p-2 border-0 rounded-lg font-black text-red-600 shadow-sm" onChange={handleChange} />
+            <input 
+              type="number" 
+              name="dia_pago" 
+              disabled={loading} 
+              value={formData.dia_pago} 
+              className="w-full p-2 border-0 rounded-lg font-black text-red-600 shadow-sm" 
+              onChange={handleChange} 
+            />
           </div>
           <div>
             <label className="text-[10px] font-black text-gray-500 uppercase">Personas</label>
-            <input type="number" name="no_personas" disabled={loading} value={formData.no_personas} className="w-full p-2 border-0 rounded-lg font-bold shadow-sm" onChange={handleChange} />
+            <input 
+              type="number" 
+              name="no_personas" 
+              disabled={loading} 
+              value={formData.no_personas} 
+              className="w-full p-2 border-0 rounded-lg font-bold shadow-sm" 
+              onChange={handleChange} 
+            />
           </div>
         </div>
 
@@ -284,7 +437,11 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               name="fecha_inicio_contrato" 
               value={formData.fecha_inicio_contrato} 
               disabled={loading} 
-              className={`w-full p-2 border rounded-lg shadow-sm ${errorValidacion ? 'border-red-500 bg-red-50' : ''}`}
+              className={`w-full p-2 border rounded-lg shadow-sm ${
+                errorValidacion?.error === "SOLAPAMIENTO_CONTRATOS" || errorValidacion?.error === "FECHAS_INCOMPLETAS" || errorValidacion?.error === "NO_SE_PUEDE_MODIFICAR_FECHAS"
+                  ? 'border-red-500 bg-red-50 ring-2 ring-red-500' 
+                  : ''
+              }`}
               onChange={handleChange} 
             />
           </div>
@@ -296,27 +453,31 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               name="fecha_fin_contrato" 
               value={formData.fecha_fin_contrato} 
               disabled={loading} 
-              className={`w-full p-2 border rounded-lg shadow-sm ${errorValidacion ? 'border-red-500 bg-red-50' : ''}`}
+              className={`w-full p-2 border rounded-lg shadow-sm ${
+                errorValidacion?.error === "SOLAPAMIENTO_CONTRATOS" || errorValidacion?.error === "FECHAS_INCOMPLETAS" || errorValidacion?.error === "NO_SE_PUEDE_MODIFICAR_FECHAS"
+                  ? 'border-red-500 bg-red-50 ring-2 ring-red-500' 
+                  : ''
+              }`}
               onChange={handleChange} 
             />
           </div>
           <div>
             <label className="text-[10px] font-black text-gray-400 uppercase">Documentos Listos</label>
             <div className="flex gap-4 mt-2">
-                {['ine', 'carta', 'contrato'].map(doc => (
-                  <label key={doc} className="flex items-center gap-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                      checked={formData.docs[doc] === 'si'}
-                      onChange={() => handleToggleDoc(doc)}
-                    />
-                    <span className="text-[10px] font-black text-gray-500 uppercase group-hover:text-blue-600 transition-colors">
-                      {doc}
-                    </span>
-                  </label>
-                ))}
-             </div>
+              {['ine', 'carta', 'contrato'].map(doc => (
+                <label key={doc} className="flex items-center gap-2 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    checked={formData.docs[doc] === 'si'}
+                    onChange={() => handleToggleDoc(doc)}
+                  />
+                  <span className="text-[10px] font-black text-gray-500 uppercase group-hover:text-blue-600 transition-colors">
+                    {doc}
+                  </span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -359,7 +520,12 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         </div>
 
         <div className="flex justify-end gap-3 pt-4 border-t">
-          <button type="button" onClick={onCancelar} disabled={loading} className="px-6 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 uppercase">
+          <button 
+            type="button" 
+            onClick={onCancelar} 
+            disabled={loading} 
+            className="px-6 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 uppercase"
+          >
             Cancelar
           </button>
           <button 
