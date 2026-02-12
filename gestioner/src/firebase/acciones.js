@@ -21,148 +21,227 @@ import {
 // UTILIDAD: Generar periodos esperados
 // ============================================
 const generarPeriodosEsperados = (fechaInicio, fechaFin, montoRenta) => {
+  const rentaSegura = Number(montoRenta);
+  if (isNaN(rentaSegura) || rentaSegura <= 0) {
+    throw new Error("El monto de renta debe ser un número positivo válido.");
+  }
   const periodos = [];
-  const inicio = fechaInicio.toDate ? fechaInicio.toDate() : new Date(fechaInicio);
-  const fin = fechaFin.toDate ? fechaFin.toDate() : new Date(fechaFin);
-  
+  const inicio = fechaInicio?.toDate ? fechaInicio.toDate() : new Date(fechaInicio);
+  const fin = fechaFin?.toDate ? fechaFin.toDate() : new Date(fechaFin);
+  if (inicio > fin) {
+    throw new Error("La fecha de inicio no puede ser posterior a la de fin.");
+  }
   let actual = new Date(inicio.getFullYear(), inicio.getMonth(), 1);
-  const limite = new Date(fin.getFullYear(), fin.getMonth(), 1);
-  
-  while (actual <= limite) {
+  let iteraciones = 0;
+  const MAX_ITERACIONES = 120; // 10 años máximo por contrato
+
+  while (actual <= fin && iteraciones < MAX_ITERACIONES) {
+    iteraciones++;
+    
     const anio = actual.getFullYear();
     const mes = actual.getMonth() + 1;
-    const periodo = `${anio}-${mes.toString().padStart(2, '0')}`;
+    const periodoId = `${anio}-${mes.toString().padStart(2, '0')}`;
     
     periodos.push({
-      periodo,
+      periodo: periodoId,
       anio,
       mes,
       estatus: "pendiente",
-      monto_esperado: Number(montoRenta),
+      monto_esperado: rentaSegura,
       monto_pagado: 0,
-      saldo_restante: Number(montoRenta),
+      saldo_restante: rentaSegura,
       fecha_ultimo_pago: null,
-      id_pagos: []
+      id_pagos: [],
+      metodo_condonacion: false // Agregado para consistencia con tu doc
     });
-    
     actual.setMonth(actual.getMonth() + 1);
   }
-  
   return periodos;
 };
-
 // ============================================
 // REGISTRAR NUEVO INQUILINO (CON PERIODOS)
 // ============================================
 export const registrarNuevoInquilino = async (idUnidad, datos) => {
+  // 1. FRENO DE SEGURIDAD: Validación de disponibilidad (Pre-flight)
+  // Evitamos que dos usuarios ocupen la misma unidad al mismo tiempo.
+  const unidadRef = doc(db, "unidades", idUnidad);
+  const unidadSnap = await getDoc(unidadRef);
+
+  if (!unidadSnap.exists()) {
+    throw new Error("LA_UNIDAD_NO_EXISTE");
+  }
+
+  const unidadActual = unidadSnap.data();
+  if (unidadActual.estado === "Ocupado") {
+    throw new Error("LA_UNIDAD_YA_ESTA_OCUPADA");
+  }
+
   const batch = writeBatch(db);
-  const nuevoInqId = `inq_${Date.now()}`;
-  const nuevoContratoId = `con_${Date.now()}`;
+  
+  // 2. IDs UNICOS (Freno de colisión)
+  // Usar un sufijo aleatorio asegura que si dos personas registran en el mismo milisegundo, no choquen.
+  const ts = Date.now();
+  const randomSuffix = Math.floor(Math.random() * 1000);
+  const nuevoInqId = `inq_${ts}_${randomSuffix}`;
+  const nuevoContratoId = `con_${ts}_${randomSuffix}`;
   
   const inqRef = doc(db, "inquilinos", nuevoInqId);
   const contratoRef = doc(db, "contratos", nuevoContratoId);
-  const unidadRef = doc(db, "unidades", idUnidad);
 
-  // Generar periodos esperados
+  // 3. NORMALIZACIÓN DE FECHAS
+  // El "T12:00:00" es excelente para evitar desfases por zona horaria.
   const fechaInicio = new Date(datos.fecha_inicio_contrato + "T12:00:00");
   const fechaFin = new Date(datos.fecha_fin_contrato + "T12:00:00");
+  
+  // Generar periodos usando la función blindada que ya revisamos
   const periodosEsperados = generarPeriodosEsperados(
     fechaInicio, 
     fechaFin, 
     datos.renta_actual
   );
 
-  // 1. Datos completos del Inquilino
+  // 4. ESTRUCTURA DE DATOS BLINDADA
   const inqData = {
     id: nuevoInqId,
-    nombre_completo: datos.nombre_completo,
-    telefono_contacto: datos.telefono_contacto,
+    nombre_completo: datos.nombre_completo?.trim(),
+    telefono_contacto: datos.telefono_contacto || "",
     telefono_emergencia: datos.telefono_emergencia || "",
-    deposito_garantia_inicial: Number(datos.deposito_garantia_inicial),
-    dia_pago: Number(datos.dia_pago),
-    renta_actual: Number(datos.renta_actual),
+    deposito_garantia_inicial: Number(datos.deposito_garantia_inicial) || 0,
+    dia_pago: Number(datos.dia_pago) || 1,
+    renta_actual: Number(datos.renta_actual) || 0,
     no_personas: Number(datos.no_personas) || 1,
     acompanantes: datos.acompanantes || [],
-    docs: datos.docs || { ine: "no", carta: "no", contrato: "no" },
+    docs: {
+      ine: datos.docs?.ine || "no",
+      carta: datos.docs?.carta || "no",
+      contrato: datos.docs?.contrato || "no"
+    },
     fecha_inicio_contrato: Timestamp.fromDate(fechaInicio),
     fecha_fin_contrato: Timestamp.fromDate(fechaFin),
     activo: true,
+    estado: "Activo", // Consistencia con tu doc de integridad
     id_contrato_actual: nuevoContratoId,
     id_unidad_actual: idUnidad,
-    fecha_registro: serverTimestamp()
+    historial_contratos: [], // Inicializado para evitar errores de array null
+    fecha_registro: serverTimestamp(),
+    ultima_modificacion: serverTimestamp()
   };
 
-  // 2. Datos del Contrato (CON PERIODOS ESPERADOS)
   const contratoData = {
+    id: nuevoContratoId,
     id_inquilino: nuevoInqId,
     id_unidad: idUnidad,
-    nombre_inquilino: datos.nombre_completo,
+    nombre_inquilino: datos.nombre_completo?.trim(),
     monto_renta: Number(datos.renta_actual),
     monto_deposito: Number(datos.deposito_garantia_inicial),
     dia_pago: Number(datos.dia_pago),
     fecha_inicio: Timestamp.fromDate(fechaInicio),
     fecha_fin: Timestamp.fromDate(fechaFin),
     estatus: "activo",
-    periodos_esperados: periodosEsperados, // ⭐ NUEVO
+    periodos_esperados: periodosEsperados,
     total_periodos: periodosEsperados.length,
     periodos_pagados: 0,
     fecha_creacion: serverTimestamp()
   };
 
-  // 3. Actualizar la Unidad
   const uniData = {
     id_inquilino: nuevoInqId,
-    nombre_inquilino: datos.nombre_completo,
+    nombre_inquilino: datos.nombre_completo?.trim(),
     renta_mensual: Number(datos.renta_actual),
     estado: "Ocupado",
-    id_contrato_actual: nuevoContratoId
+    id_contrato_actual: nuevoContratoId,
+    no_personas: Number(datos.no_personas) || 1
   };
 
+  // 5. OPERACIÓN ATÓMICA
   batch.set(inqRef, inqData);
   batch.set(contratoRef, contratoData);
   batch.update(unidadRef, uniData);
 
-  await batch.commit();
-  
-  console.log(`✅ Contrato creado con ${periodosEsperados.length} periodos`);
-  return { idInquilino: nuevoInqId, idContrato: nuevoContratoId };
-};
-export const registrarPagoFirebase = async (datosPago) => {
   try {
-    // 1. Guardar pago en colección /pagos
-    const docRef = await addDoc(collection(db, "pagos"), {
-      ...datosPago,
-      monto_pagado: Number(datosPago.monto_pagado), 
-      // Usamos el total que incluye renta + servicios
-      total_esperado_periodo: Number(datosPago.total_esperado_periodo),
-      fecha_pago_realizado: datosPago.fecha_pago_realizado 
-        ? new Date(datosPago.fecha_pago_realizado) 
-        : new Date(),
-      fecha_registro: serverTimestamp()
-    });
+    await batch.commit();
+    console.log(`✅ Registro exitoso: Inquilino ${nuevoInqId} en Unidad ${idUnidad}`);
+    return { idInquilino: nuevoInqId, idContrato: nuevoContratoId };
+  } catch (error) {
+    console.error("Error crítico en batch:", error);
+    throw new Error("FALLO_OPERACION_ATÓMICA: No se guardó ningún dato.");
+  }
+};
 
-    const idPago = docRef.id;
+export const registrarPagoFirebase = async (datosPago) => {
+  const batch = writeBatch(db);
 
-    // 2. Actualizar periodo en el contrato
-    if (datosPago.id_contrato && datosPago.id_contrato !== "sin_contrato") {
-      await actualizarPeriodoEnContrato(
-        datosPago.id_contrato,
-        datosPago.periodo,
-        {
-          // ⭐ CAMBIO CLAVE: Enviamos el nuevo monto_esperado al contrato
-          monto_esperado: Number(datosPago.total_esperado_periodo), 
-          monto_pagado: Number(datosPago.monto_pagado),
-          saldo_restante: Number(datosPago.saldo_restante_periodo || 0),
-          estatus: datosPago.estatus,
-          id_pago: idPago
-        }
-      );
+  // 1. FRENO DE SEGURIDAD: Obtener referencia del contrato para validar y leer depósito
+  const contratoRef = doc(db, "contratos", datosPago.id_contrato);
+  const contratoSnap = await getDoc(contratoRef);
+
+  if (!contratoSnap.exists()) {
+    throw new Error("EL_CONTRATO_NO_EXISTE");
+  }
+
+  const contratoActual = contratoSnap.data();
+  const nuevoPagoRef = doc(collection(db, "pagos"));
+  const idPago = nuevoPagoRef.id;
+
+  // 3. CALCULAR SALDOS Y EXCEDENTES (Freno de Aritmética)
+  const montoRecibido = Number(datosPago.monto_pagado) || 0;
+  const totalEsperado = Number(datosPago.total_esperado_periodo) || 0;
+  
+  // Obtenemos el periodo específico del array del contrato
+  const periodosActualizados = contratoActual.periodos_esperados.map((p) => {
+    if (p.periodo === datosPago.periodo) {
+      const nuevoMontoPagadoAcumulado = p.monto_pagado + montoRecibido;
+      const nuevoSaldo = Math.max(0, totalEsperado - nuevoMontoPagadoAcumulado);
+      
+      return {
+        ...p,
+        monto_esperado: totalEsperado, // Actualizamos por si hubo excedentes de servicios
+        monto_pagado: nuevoMontoPagadoAcumulado,
+        saldo_restante: nuevoSaldo,
+        estatus: nuevoSaldo <= 0 ? "pagado" : "parcial",
+        fecha_ultimo_pago: Timestamp.now(),
+        id_pagos: [...(p.id_pagos || []), idPago]
+      };
     }
+    return p;
+  });
 
+  // 4. FRENO: Recalcular periodos_pagados global
+  const totalPagados = periodosActualizados.filter(p => p.estatus === "pagado").length;
+
+  // 5. MANEJO DE DEPÓSITO (Si los excedentes se cobraron de ahí)
+  let nuevoMontoDeposito = contratoActual.monto_deposito;
+  if (datosPago.servicios?.excedentes_cobrados_de === "deposito") {
+    const descuento = Number(datosPago.servicios.excedentes_del_deposito) || 0;
+    nuevoMontoDeposito = Math.max(0, nuevoMontoDeposito - descuento);
+  }
+
+  // 6. PREPARAR EL BATCH
+  // Registro en /pagos
+  batch.set(nuevoPagoRef, {
+    ...datosPago,
+    id: idPago,
+    monto_pagado: montoRecibido,
+    total_esperado_periodo: totalEsperado,
+    fecha_pago_realizado: datosPago.fecha_pago_realizado 
+      ? new Date(datosPago.fecha_pago_realizado) 
+      : new Date(),
+    fecha_registro: serverTimestamp()
+  });
+
+  // Actualización en /contratos
+  batch.update(contratoRef, {
+    periodos_esperados: periodosActualizados,
+    periodos_pagados: totalPagados,
+    monto_deposito: nuevoMontoDeposito
+  });
+
+  try {
+    await batch.commit();
     return idPago;
   } catch (error) {
-    console.error("Error al guardar pago:", error);
-    throw error;
+    console.error("Error crítico en el batch de pago:", error);
+    throw new Error("FALLO_SINCRONIZACION_PAGO: No se registró el pago ni se afectó el contrato.");
   }
 };
 
@@ -171,94 +250,125 @@ export const registrarPagoFirebase = async (datosPago) => {
 // ============================================
 export const actualizarPeriodoEnContrato = async (idContrato, periodo, datosPago) => {
   const contratoRef = doc(db, "contratos", idContrato);
-  const contratoSnap = await getDoc(contratoRef);
   
+  // 1. FRENO DE SEGURIDAD: Obtener datos frescos
+  const contratoSnap = await getDoc(contratoRef);
   if (!contratoSnap.exists()) {
-    console.error("Contrato no encontrado");
+    throw new Error("CONTRATO_NO_ENCONTRADO");
+  }
+
+  const contrato = contratoSnap.data();
+  // Freno: Asegurar que periodos_esperados sea un array
+  const periodosEsperados = Array.isArray(contrato.periodos_esperados) 
+    ? [...contrato.periodos_esperados] 
+    : [];
+
+  const indicePeriodo = periodosEsperados.findIndex(p => p.periodo === periodo);
+  if (indicePeriodo === -1) {
+    throw new Error(`PERIODO_${periodo}_NO_EXISTE_EN_CONTRATO`);
+  }
+
+  const periodoActual = periodosEsperados[indicePeriodo];
+  if (periodoActual.id_pagos?.includes(datosPago.id_pago)) {
+    console.warn("Este pago ya fue procesado en el contrato.");
     return;
   }
+  const montoRecibido = Number(datosPago.monto_pagado) || 0;
+  const nuevoMontoEsperado = Number(datosPago.monto_esperado ?? periodoActual.monto_esperado);
   
-  const contrato = contratoSnap.data();
-  const periodosEsperados = contrato.periodos_esperados || [];
-  const indicePeriodo = periodosEsperados.findIndex(p => p.periodo === periodo);
+  const montoPagadoPrevio = Number(periodoActual.monto_pagado) || 0;
+  const nuevoMontoPagadoAcumulado = montoPagadoPrevio + montoRecibido;
   
-  if (indicePeriodo === -1) return;
-  
-  const periodoActual = periodosEsperados[indicePeriodo];
+  const nuevoSaldo = Math.max(0, nuevoMontoEsperado - nuevoMontoPagadoAcumulado);
 
-  // 1. DETERMINAR EL NUEVO MONTO ESPERADO
-  // Si el pago trae un "monto_esperado" (Renta + Servicios), lo usamos.
-  // Si no, mantenemos el que ya tenía el periodo.
-  const nuevoMontoEsperado = datosPago.monto_esperado || periodoActual.monto_esperado;
-
-  // 2. CALCULAR PAGADO Y SALDO
-  const nuevoMontoPagado = (periodoActual.monto_pagado || 0) + datosPago.monto_pagado;
-  
-  // Usamos el nuevoMontoEsperado para que el saldo sea correcto (ej. 5600 - 5000 = 600)
-  const nuevoSaldo = nuevoMontoEsperado - nuevoMontoPagado;
-  
+  // 4. DETERMINACIÓN DE ESTATUS (Consistente con tu documento de integridad)
   let nuevoEstatus = "pendiente";
   if (nuevoSaldo <= 0) {
     nuevoEstatus = "pagado";
-  } else if (nuevoMontoPagado > 0) {
+  } else if (nuevoMontoPagadoAcumulado > 0) {
     nuevoEstatus = "parcial";
   }
-  
-  // 3. ACTUALIZAR EL MAPA
+
+  // 5. ACTUALIZACIÓN DEL OBJETO
   periodosEsperados[indicePeriodo] = {
     ...periodoActual,
-    monto_esperado: nuevoMontoEsperado, // <--- CAMBIO CLAVE: Actualizamos el total real
-    monto_pagado: nuevoMontoPagado,
-    saldo_restante: Math.max(0, nuevoSaldo),
+    monto_esperado: nuevoMontoEsperado,
+    monto_pagado: nuevoMontoPagadoAcumulado,
+    saldo_restante: nuevoSaldo,
     estatus: nuevoEstatus,
     fecha_ultimo_pago: Timestamp.now(),
     id_pagos: [...(periodoActual.id_pagos || []), datosPago.id_pago]
   };
-  
-  const periodosPagados = periodosEsperados.filter(p => 
+
+  // 6. RECALCULAR CONTADOR GLOBAL
+  const periodosPagadosContador = periodosEsperados.filter(p => 
     p.estatus === "pagado" || p.estatus === "condonado"
   ).length;
-  
-  await updateDoc(contratoRef, {
-    periodos_esperados: periodosEsperados,
-    periodos_pagados: periodosPagados
-  });
-  
-  console.log(`✅ Periodo ${periodo} actualizado: ${nuevoEstatus} con total de ${nuevoMontoEsperado}`);
+
+  // 7. EJECUCIÓN
+  try {
+    await updateDoc(contratoRef, {
+      periodos_esperados: periodosEsperados,
+      periodos_pagados: periodosPagadosContador,
+      ultima_modificacion: Timestamp.now()
+    });
+    return true;
+  } catch (error) {
+    console.error("Error al actualizar contrato:", error);
+    throw new Error("ERROR_ACTUALIZACION_CONTRATO");
+  }
 };
 
 // ============================================
 // VERIFICAR SI CONTRATO ESTÁ COMPLETAMENTE PAGADO
 // ============================================
 export const verificarContratoPagado = async (idContrato) => {
+  if (!idContrato) {
+    return { completado: false, mensaje: "ID de contrato no proporcionado" };
+  }
+
   const contratoRef = doc(db, "contratos", idContrato);
   const contratoSnap = await getDoc(contratoRef);
   
   if (!contratoSnap.exists()) {
-    return { completado: false, mensaje: "Contrato no encontrado" };
+    return { completado: false, mensaje: "Contrato no encontrado en la base de datos" };
   }
   
   const contrato = contratoSnap.data();
-  const periodosEsperados = contrato.periodos_esperados || [];
-  
-  const todosPagados = periodosEsperados.every(
+  const periodosEsperados = Array.isArray(contrato.periodos_esperados) 
+    ? contrato.periodos_esperados 
+    : [];
+  const TOLERANCIA = 0.01; 
+
+  const pendientes = periodosEsperados.filter(p => {
+    const esEstadoPendiente = p.estatus === "pendiente" || p.estatus === "parcial";
+    const tieneSaldoReal = (Number(p.saldo_restante) || 0) > TOLERANCIA;
+    const noEstaCondonado = p.estatus !== "condonado";
+    return (esEstadoPendiente || tieneSaldoReal) && noEstaCondonado;
+  });
+
+  const todosPagados = pendientes.length === 0;
+  const contadorRealPagados = periodosEsperados.filter(
     p => p.estatus === "pagado" || p.estatus === "condonado"
-  );
-  
-  const pendientes = periodosEsperados.filter(
-    p => p.estatus === "pendiente" || p.estatus === "parcial"
-  );
-  
+  ).length;
+
+  const hayDivergencia = (contrato.periodos_pagados || 0) !== contadorRealPagados;
+
   return {
     completado: todosPagados,
     total_periodos: periodosEsperados.length,
-    periodos_pagados: contrato.periodos_pagados || 0,
+    periodos_pagados: contadorRealPagados, // Devolvemos el real calculado, no solo el guardado
     periodos_pendientes: pendientes.length,
     detalle_pendientes: pendientes.map(p => ({
       periodo: p.periodo,
-      saldo: p.saldo_restante,
+      saldo: Number(p.saldo_restante) || 0,
       estatus: p.estatus
-    }))
+    })),
+    // Alerta de seguridad si los datos internos del contrato están descuadrados
+    alerta_integridad: hayDivergencia,
+    mensaje: todosPagados 
+      ? "Contrato liquidado correctamente" 
+      : `Existen ${pendientes.length} periodos con saldo pendiente`
   };
 };
 // ============================================
@@ -333,60 +443,127 @@ export const finalizarContrato = async (idUnidad, idInquilino, idContrato) => {
     return { exito: false, mensaje: error.message };
   }
 };
-
 // ============================================
-// RENOVAR INQUILINO DESDE ARCHIVO (CON PERIODOS)
+// RENOVAR INQUILINO DESDE ARCHIVO (CON ID ÚNICO POR RENOVACIÓN)
 // ============================================
 export const renovarInquilinoDesdeArchivo = async (idInquilino, idUnidad, datosNuevos) => {
   const batch = writeBatch(db);
 
-  // Generamos un ID único para el contrato de renovación
-  // Usamos un timestamp para evitar colisiones si se renueva varias veces
-  const timestampId = Date.now().toString().slice(-4);
-  const customContratoId = `con_R${timestampId}_${idInquilino.replace('inq_', '')}`;
+  console.log("========================================");
+  console.log("🚀 INICIANDO RENOVACIÓN DE INQUILINO");
+  console.log("Inquilino:", idInquilino);
+  console.log("Unidad:", idUnidad);
+  console.log("========================================");
 
-  const inqRef = doc(db, "inquilinos", idInquilino);
+  // 1. FRENO DE SEGURIDAD: Verificar disponibilidad de la unidad
   const unidadRef = doc(db, "unidades", idUnidad);
-  const nuevoContratoRef = doc(db, "contratos", customContratoId);
+  const unidadSnap = await getDoc(unidadRef);
+  
+  if (!unidadSnap.exists()) {
+    console.log("❌ ERROR: La unidad no existe");
+    throw new Error("LA_UNIDAD_NO_EXISTE");
+  }
+  
+  if (unidadSnap.data().estado === "Ocupado") {
+    console.log("❌ ERROR: La unidad está ocupada");
+    throw new Error("LA_UNIDAD_ESTA_OCUPADA: No se puede renovar en una unidad con inquilino activo.");
+  }
 
+  console.log("✅ Unidad disponible");
+
+  // 2. NORMALIZACIÓN DE FECHAS (Freno de zona horaria)
   const fechaInicio = new Date(datosNuevos.fecha_inicio_contrato + "T12:00:00");
   const fechaFin = new Date(datosNuevos.fecha_fin_contrato + "T12:00:00");
 
+  console.log("Fechas normalizadas:");
+  console.log("  Inicio:", fechaInicio);
+  console.log("  Fin:", fechaFin);
+
+  // ⭐⭐⭐ 3. VALIDACIÓN CRÍTICA: VERIFICAR SOLAPAMIENTO CONTRA **TODOS** LOS CONTRATOS DE LA UNIDAD
+  const validacion = await validarSolapamientoContratos(
+    idUnidad,
+    fechaInicio,
+    fechaFin,
+    null // No excluir ningún contrato
+  );
+
+  if (!validacion.valido) {
+    console.error("❌❌❌ VALIDACIÓN FALLÓ - OPERACIÓN ABORTADA");
+    console.error("Detalles:", validacion);
+    return validacion; // Retornar el objeto con error y detalles
+  }
+
+  console.log("✅✅✅ VALIDACIÓN EXITOSA - Continuando con la renovación");
+
+  // ⭐ 4. GENERAR ID ÚNICO DEL NUEVO CONTRATO (CON TIMESTAMP Y RANDOM)
+  const ts = Date.now();
+  const randomSuffix = Math.floor(Math.random() * 1000);
+  const nuevoContratoId = `con_R_${ts}_${randomSuffix}`;
+
+  console.log("ID del nuevo contrato (ÚNICO):", nuevoContratoId);
+
+  const inqRef = doc(db, "inquilinos", idInquilino);
+  const nuevoContratoRef = doc(db, "contratos", nuevoContratoId);
+
+  // 5. GENERAR PERÍODOS ESPERADOS
   const periodosEsperados = generarPeriodosEsperados(
     fechaInicio,
     fechaFin,
     datosNuevos.renta_actual
   );
 
-  // 1. ACTUALIZAR INQUILINO (Reversión total de "Inactivo")
+  console.log(`Períodos generados: ${periodosEsperados.length} meses`);
+
+  // 6. OBTENER DATOS ACTUALES DEL INQUILINO
+  const inqSnap = await getDoc(inqRef);
+  const inqDataActual = inqSnap.data();
+  
+  // 7. ACTUALIZAR HISTORIAL DE CONTRATOS
+  const historialPrevio = inqDataActual?.historial_contratos || [];
+  const contratoAnterior = inqDataActual?.id_contrato_actual;
+  
+  const nuevoHistorial = [...historialPrevio];
+  if (contratoAnterior && !nuevoHistorial.includes(contratoAnterior)) {
+    nuevoHistorial.push(contratoAnterior);
+    console.log(`Agregando contrato anterior al historial: ${contratoAnterior}`);
+  }
+
+  console.log(`Historial de contratos: ${nuevoHistorial.length} contratos previos`);
+
+  // 8. ACTUALIZAR INQUILINO
   batch.update(inqRef, {
-    activo: true,          // Vuelve a estar activo
-    estado: "Activo",      // ⭐ CAMBIO: Antes se quedaba como "Inactivo"
+    activo: true,
+    estado: "Activo",
     id_unidad_actual: idUnidad,
-    id_contrato_actual: customContratoId,
+    id_contrato_actual: nuevoContratoId,
     renta_actual: Number(datosNuevos.renta_actual),
     dia_pago: Number(datosNuevos.dia_pago),
     no_personas: Number(datosNuevos.no_personas || 1),
     fecha_inicio_contrato: Timestamp.fromDate(fechaInicio),
     fecha_fin_contrato: Timestamp.fromDate(fechaFin),
+    historial_contratos: nuevoHistorial,
     ultima_modificacion: Timestamp.now()
   });
 
-  // 2. ACTUALIZAR UNIDAD (Vuelve a estar Ocupada)
+  console.log("✅ Inquilino actualizado en batch");
+
+  // 9. ACTUALIZAR UNIDAD
   batch.update(unidadRef, {
     estado: "Ocupado",
     id_inquilino: idInquilino,
-    nombre_inquilino: datosNuevos.nombre_completo,
-    id_contrato_actual: customContratoId,
-    renta_mensual: Number(datosNuevos.renta_actual), // ⭐ AGREGADO: Para que aparezca en el Dashboard
+    nombre_inquilino: datosNuevos.nombre_completo?.trim(),
+    id_contrato_actual: nuevoContratoId,
+    renta_mensual: Number(datosNuevos.renta_actual),
     no_personas: Number(datosNuevos.no_personas || 1)
   });
 
-  // 3. CREAR NUEVO CONTRATO
+  console.log("✅ Unidad actualizada en batch");
+
+  // 10. CREAR NUEVO CONTRATO (CON ID ÚNICO)
   batch.set(nuevoContratoRef, {
-    id: customContratoId,
+    id: nuevoContratoId,
     id_inquilino: idInquilino,
-    nombre_inquilino: datosNuevos.nombre_completo,
+    nombre_inquilino: datosNuevos.nombre_completo?.trim(),
     id_unidad: idUnidad,
     monto_renta: Number(datosNuevos.renta_actual),
     monto_deposito: Number(datosNuevos.deposito_garantia_inicial),
@@ -397,10 +574,31 @@ export const renovarInquilinoDesdeArchivo = async (idInquilino, idUnidad, datosN
     dia_pago: Number(datosNuevos.dia_pago),
     periodos_esperados: periodosEsperados,
     total_periodos: periodosEsperados.length,
-    periodos_pagados: 0
+    periodos_pagados: 0,
+    es_renovacion: true,
+    contrato_previo: contratoAnterior || null, // ⭐ Referencia al contrato anterior
+    validado_sin_solapamiento: true,
+    fecha_validacion: Timestamp.now()
   });
 
-  await batch.commit();
+  console.log("✅ Nuevo contrato agregado al batch");
+
+  // 11. EJECUTAR BATCH
+  try {
+    console.log("🔄 Ejecutando batch transaction...");
+    await batch.commit();
+    console.log("========================================");
+    console.log("✅✅✅ RENOVACIÓN COMPLETADA EXITOSAMENTE");
+    console.log("Nuevo contrato:", nuevoContratoId);
+    console.log("========================================");
+    return { success: true, exito: true, contratoId: nuevoContratoId };
+  } catch (error) {
+    console.error("========================================");
+    console.error("❌❌❌ ERROR EN BATCH TRANSACTION");
+    console.error(error);
+    console.error("========================================");
+    throw new Error("FALLO_BATCH_RENOVACION: " + error.message);
+  }
 };
 // ============================================
 // ACTUALIZAR INQUILINO (CON VALIDACIONES ESTRICTAS)
@@ -415,316 +613,423 @@ export const actualizarInquilino = async (idInquilino, idUnidad, datos) => {
   const nuevoDiaPago = Number(datos.dia_pago);
   const nuevoDeposito = Number(datos.deposito_garantia_inicial);
 
-  // 1. Datos del Inquilino
+  // 1. FRENO DE SEGURIDAD: Obtener datos actuales del Inquilino para verificar unidad
+  const inqSnap = await getDoc(inqRef);
+  if (!inqSnap.exists()) throw new Error("INQUILINO_NOT_FOUND");
+  const inqActual = inqSnap.data();
+
+  // 2. PREPARAR DATOS DEL INQUILINO
   const inqData = {
-    nombre_completo: datos.nombre_completo,
-    telefono_contacto: datos.telefono_contacto,
+    nombre_completo: datos.nombre_completo?.trim(),
+    telefono_contacto: datos.telefono_contacto || "",
     telefono_emergencia: datos.telefono_emergencia || "",
     deposito_garantia_inicial: nuevoDeposito,
     dia_pago: nuevoDiaPago,
     renta_actual: nuevaRenta,
     no_personas: Number(datos.no_personas) || 1,
     acompanantes: datos.acompanantes || [],
-    docs: datos.docs || {},
+    docs: datos.docs || inqActual.docs, // Mantiene docs previos si no vienen nuevos
     fecha_inicio_contrato: Timestamp.fromDate(new Date(datos.fecha_inicio_contrato + "T12:00:00")),
     fecha_fin_contrato: Timestamp.fromDate(new Date(datos.fecha_fin_contrato + "T12:00:00")),
     ultima_modificacion: serverTimestamp()
   };
 
-  // 2. Datos de la Unidad
+  // 3. PREPARAR DATOS DE LA UNIDAD
   const uniData = {
-    nombre_inquilino: datos.nombre_completo,
+    nombre_inquilino: datos.nombre_completo?.trim(),
     renta_mensual: nuevaRenta
   };
 
-  batch.update(inqRef, inqData);
-  batch.update(uniRef, uniData);
-
-  // 3. Actualización de Contrato y Periodos (CON VALIDACIONES ESTRICTAS)
+  // 4. LÓGICA DE CONTRATO (EL CEREBRO DE LA FUNCIÓN)
   if (idContratoActivo) {
     const contratoRef = doc(db, "contratos", idContratoActivo);
     const contratoSnap = await getDoc(contratoRef);
     
     if (contratoSnap.exists()) {
       const contratoActual = contratoSnap.data();
-      const fechaInicio = new Date(datos.fecha_inicio_contrato + "T12:00:00");
-      const fechaFin = new Date(datos.fecha_fin_contrato + "T12:00:00");
+      const fechaInicioReq = new Date(datos.fecha_inicio_contrato + "T12:00:00");
+      const fechaFinReq = new Date(datos.fecha_fin_contrato + "T12:00:00");
       
       const fechaInicioActual = contratoActual.fecha_inicio.toDate();
       const fechaFinActual = contratoActual.fecha_fin.toDate();
       const rentaAnterior = contratoActual.monto_renta;
-      const depositoAnterior = contratoActual.monto_deposito;
       
-      let nuevosPeriodos = contratoActual.periodos_esperados || [];
+      let nuevosPeriodos = [...(contratoActual.periodos_esperados || [])];
 
-      // 🚨 VERIFICAR SI HAY PAGOS REGISTRADOS (para validaciones críticas)
-      const periodosConPagos = contratoActual.periodos_esperados.filter(p => 
-        p.estatus === "pagado" || p.estatus === "parcial" || p.monto_pagado > 0
+      // 🚨 DETECTAR PAGOS (Auditando no solo estatus, sino saldos reales)
+      const periodosConPagos = nuevosPeriodos.filter(p => 
+        p.estatus === "pagado" || p.estatus === "parcial" || (Number(p.monto_pagado) || 0) > 0
       );
       const hayPagosRegistrados = periodosConPagos.length > 0;
 
-      // ⚠️ VALIDACIÓN 1: Detectar si cambiaron las fechas
+      // VALIDACIÓN 1: Fechas (Bloqueo estricto)
       const cambiaronFechas = 
-        fechaInicio.getTime() !== fechaInicioActual.getTime() || 
-        fechaFin.getTime() !== fechaFinActual.getTime();
+        fechaInicioReq.getTime() !== fechaInicioActual.getTime() || 
+        fechaFinReq.getTime() !== fechaFinActual.getTime();
 
       if (cambiaronFechas && hayPagosRegistrados) {
         return {
           success: false,
-          error: "NO_SE_PUEDE_MODIFICAR_FECHAS",
-          message: `No se pueden modificar las fechas del contrato porque ya existen ${periodosConPagos.length} periodo(s) con pagos registrados.`,
-          detalles: {
-            periodos_afectados: periodosConPagos.map(p => ({
-              periodo: p.periodo,
-              estatus: p.estatus,
-              monto_pagado: p.monto_pagado,
-              id_pagos: p.id_pagos
-            })),
-            sugerencia: "Elimina primero todos los pagos registrados si realmente necesitas cambiar las fechas del contrato."
-          }
+          error: "FECHAS_BLOQUEADAS",
+          message: `No se pueden cambiar fechas. Hay ${periodosConPagos.length} periodos con pagos.`
         };
       }
 
-      // ⚠️ VALIDACIÓN 2: Detectar si cambiaron el DEPÓSITO
-      const cambioDeposito = nuevoDeposito !== depositoAnterior;
-
-      if (cambioDeposito && hayPagosRegistrados) {
+      // VALIDACIÓN 2: Depósito (Protección de historial)
+      if (nuevoDeposito !== contratoActual.monto_deposito && hayPagosRegistrados) {
         return {
           success: false,
-          error: "NO_SE_PUEDE_MODIFICAR_DEPOSITO",
-          message: `No se puede modificar el depósito porque ya existen ${periodosConPagos.length} periodo(s) con pagos registrados.`,
-          detalles: {
-            deposito_actual: depositoAnterior,
-            deposito_intentado: nuevoDeposito,
-            periodos_afectados: periodosConPagos.map(p => ({
-              periodo: p.periodo,
-              estatus: p.estatus,
-              monto_pagado: p.monto_pagado
-            })),
-            sugerencia: "El depósito puede haber sido afectado por cobros de excedentes de servicios. Elimina todos los pagos antes de modificarlo."
-          }
+          error: "DEPOSITO_BLOQUEADO",
+          message: "No se puede modificar el depósito si ya hay pagos registrados."
         };
       }
 
-      // ✅ NO HAY PAGOS - PERMITIR CAMBIOS DE FECHAS Y REGENERAR
+      // ACCIÓN A: Regenerar por cambio de fecha (Solo si está limpio de pagos)
       if (cambiaronFechas && !hayPagosRegistrados) {
-        nuevosPeriodos = generarPeriodosEsperados(fechaInicio, fechaFin, nuevaRenta);
-        console.log("✅ Fechas modificadas y periodos regenerados (sin pagos previos)");
-      }
-
-      // ACTUALIZACIÓN DE MONTOS EN PERIODOS PENDIENTES: Solo si NO cambiaron fechas
-      if (!cambiaronFechas && nuevaRenta !== rentaAnterior) {
+        nuevosPeriodos = generarPeriodosEsperados(fechaInicioReq, fechaFinReq, nuevaRenta);
+      } 
+      // ACCIÓN B: Actualizar renta en periodos futuros (Sin tocar los que ya tienen abonos)
+      else if (nuevaRenta !== rentaAnterior) {
         nuevosPeriodos = nuevosPeriodos.map(p => {
-          if (p.estatus === "pendiente") {
+          // Solo actualizamos los que están 100% pendientes (sin un solo centavo pagado)
+          if (p.estatus === "pendiente" && (Number(p.monto_pagado) || 0) === 0) {
             return {
               ...p,
               monto_esperado: nuevaRenta,
               saldo_restante: nuevaRenta
             };
           }
-          return p; // Respeta periodos pagados o parciales
+          return p;
         });
       }
       
       batch.update(contratoRef, {
         monto_renta: nuevaRenta,
-        monto_deposito: nuevoDeposito, // Solo se actualiza si NO hay pagos
+        monto_deposito: nuevoDeposito,
         dia_pago: nuevoDiaPago,
-        fecha_inicio: Timestamp.fromDate(fechaInicio),
-        fecha_fin: Timestamp.fromDate(fechaFin),
-        nombre_inquilino: datos.nombre_completo,
+        fecha_inicio: Timestamp.fromDate(fechaInicioReq),
+        fecha_fin: Timestamp.fromDate(fechaFinReq),
+        nombre_inquilino: datos.nombre_completo?.trim(),
         periodos_esperados: nuevosPeriodos,
-        total_periodos: nuevosPeriodos.length
+        total_periodos: nuevosPeriodos.length,
+        ultima_edicion: serverTimestamp() // Audit trail
       });
     }
   }
 
-  await batch.commit();
-  return { success: true };
+  // 5. EJECUCIÓN ATÓMICA
+  batch.update(inqRef, inqData);
+  batch.update(uniRef, uniData);
+
+  try {
+    await batch.commit();
+    return { success: true };
+  } catch (error) {
+    console.error("Error crítico en actualización:", error);
+    return { success: false, error: "DATABASE_ERROR", message: error.message };
+  }
 };
 /**
  * Obtiene el historial de pagos de un inquilino.
- * @param {string} idInquilino - El ID único del inquilino.
- * @param {string} idContrato - (Opcional) Si se provee, filtra solo los pagos de ese contrato.
  */
 export const getPagosPorInquilino = async (idInquilino, idContrato = null) => {
-  try {
-    // 1. Referencia a la colección
-    const pagosRef = collection(db, "pagos");
+  // 1. FRENO DE SEGURIDAD: Validación de entrada
+  if (!idInquilino) {
+    console.warn("getPagosPorInquilino: No se proporcionó idInquilino");
+    return [];
+  }
 
-    // 2. Construcción de la consulta base
+  try {
+    const pagosRef = collection(db, "pagos");
     let q;
-    
-    if (idContrato) {
-      // Si queremos ver los pagos de un contrato específico (Histórico)
+
+    // 2. CONSTRUCCIÓN DE CONSULTA (Optimizada)
+    // Agregamos orderBy("fecha_registro", "desc") como segundo criterio 
+    // por si hay múltiples pagos en un mismo periodo.
+    if (idContrato && idContrato !== "sin_contrato") {
       q = query(
         pagosRef,
         where("id_inquilino", "==", idInquilino),
         where("id_contrato", "==", idContrato),
-        orderBy("periodo", "desc")
+        orderBy("periodo", "desc"),
+        orderBy("fecha_registro", "desc") 
       );
     } else {
-      // Si queremos ver TODO el historial del inquilino (General)
       q = query(
         pagosRef,
         where("id_inquilino", "==", idInquilino),
-        orderBy("periodo", "desc")
+        orderBy("periodo", "desc"),
+        orderBy("fecha_registro", "desc")
       );
     }
 
-    // 3. Ejecución
     const querySnapshot = await getDocs(q);
-    
-    // 4. Mapeo de resultados
-    const historial = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      // Convertimos el Timestamp de Firebase a objeto Date de JS para la UI
-      fecha_pago_realizado: doc.data().fecha_pago_realizado?.toDate?.() || doc.data().fecha_pago_realizado
-    }));
+
+    // 3. MAPEO CON BLINDAJE DE TIPOS (Freno contra crashes en la UI)
+    const historial = querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      
+      return {
+        id: docSnap.id,
+        ...data,
+        // Normalización de montos (asegurar que siempre sean números para cálculos en UI)
+        monto_pagado: Number(data.monto_pagado) || 0,
+        total_esperado_periodo: Number(data.total_esperado_periodo) || 0,
+        
+        // Freno para fechas: Evita errores si el campo no existe o es nulo
+        fecha_pago_realizado: data.fecha_pago_realizado?.toDate 
+          ? data.fecha_pago_realizado.toDate() 
+          : (data.fecha_pago_realizado instanceof Date ? data.fecha_pago_realizado : new Date()),
+          
+        fecha_registro: data.fecha_registro?.toDate 
+          ? data.fecha_registro.toDate() 
+          : null
+      };
+    });
 
     return historial;
 
   } catch (error) {
-    console.error("Error al obtener pagos en getPagosPorInquilino:", error);
-    // Es importante devolver un array vacío para que el .map() en la UI no truene
-    return [];
+    // 4. IDENTIFICACIÓN DE ERRORES DE ÍNDICE
+    // Firebase requiere índices compuestos para múltiples 'where' y 'orderBy'
+    if (error.code === 'failed-precondition') {
+      console.error("❌ ERROR DE ÍNDICE: Necesitas crear un índice compuesto en Firebase para esta consulta.");
+      // Aquí podrías incluso poner el link que Firebase devuelve en la consola
+    } else {
+      console.error("Error al obtener pagos:", error);
+    }
+    
+    return []; // Retorno seguro
   }
 };
-
 // Nueva función para buscar pagos por unidad (en lugar de por inquilino)
+/**
+ * Obtiene todos los pagos asociados a una unidad específica (Historial de la propiedad).
+ */
 export const getPagosPorUnidad = async (idUnidad) => {
+  if (!idUnidad) {
+    console.warn("getPagosPorUnidad: No se proporcionó idUnidad");
+    return [];
+  }
+
   try {
     const pagosRef = collection(db, "pagos");
-    
     const q = query(
       pagosRef,
       where("id_unidad", "==", idUnidad),
-      orderBy("periodo", "desc")
+      orderBy("periodo", "desc"),
+      orderBy("fecha_registro", "desc")
     );
 
     const querySnapshot = await getDocs(q);
-    
-    const historial = querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      fecha_pago_realizado: doc.data().fecha_pago_realizado?.toDate?.() || doc.data().fecha_pago_realizado
-    }));
 
-    console.log(`✅ Se encontraron ${historial.length} pagos para la unidad ${idUnidad}`);
+    // 3. MAPEO CON LIMPIEZA DE DATOS (Freno contra inconsistencias)
+    const historial = querySnapshot.docs.map(docSnap => {
+      const data = docSnap.data();
+      
+      return {
+        id: docSnap.id,
+        ...data,
+        // Forzamos que los montos sean numéricos para evitar errores en sumatorias de la UI
+        monto_pagado: Number(data.monto_pagado) || 0,
+        
+        // Manejo seguro de fechas
+        fecha_pago_realizado: data.fecha_pago_realizado?.toDate 
+          ? data.fecha_pago_realizado.toDate() 
+          : (data.fecha_pago_realizado instanceof Date ? data.fecha_pago_realizado : new Date()),
+          
+        // Identificar quién era el inquilino en ese momento (muy útil para este reporte)
+        nombre_inquilino: data.nombre_inquilino || "Inquilino desconocido"
+      };
+    });
+
+    console.log(`✅ Reporte Unidad ${idUnidad}: ${historial.length} registros recuperados.`);
     return historial;
 
   } catch (error) {
-    console.error("Error al obtener pagos por unidad:", error);
-    return [];
+    // 4. MANEJO DE ERRORES ESPECÍFICOS
+    if (error.code === 'failed-precondition') {
+      console.error("❌ ERROR DE ÍNDICE: Se requiere índice compuesto para (id_unidad + periodo + fecha_registro).");
+    } else {
+      console.error("Error al obtener pagos por unidad:", error);
+    }
+    
+    return []; // Retorno seguro para que el .map() de la tabla no falle
   }
 };
 export const renovarContratoInquilino = async (idInquilino, idUnidad, nuevosDatos) => {
   const batch = writeBatch(db);
-  const nuevoContratoId = `con_${Date.now()}`;
+  const ts = Date.now();
+  const nuevoContratoId = `con_REN_${ts}`; // Prefijo REN para identificar renovaciones rápido
   
   const inqRef = doc(db, "inquilinos", idInquilino);
   const unidadRef = doc(db, "unidades", idUnidad);
   const nuevoContratoRef = doc(db, "contratos", nuevoContratoId);
 
   try {
-    // 1. Buscamos y cerramos el contrato anterior
-    const q = query(collection(db, "contratos"), 
-              where("id_inquilino", "==", idInquilino), 
-              where("estatus", "==", "activo"));
+    // 1. FRENO DE SEGURIDAD: Cerrar contratos activos previos
+    // Evitamos que el inquilino tenga 2 contratos "Activos" al mismo tiempo.
+    const q = query(
+      collection(db, "contratos"), 
+      where("id_inquilino", "==", idInquilino), 
+      where("estatus", "==", "activo")
+    );
+    
     const snap = await getDocs(q);
-    snap.forEach(d => batch.update(d.ref, { estatus: "finalizado", fecha_cierre: serverTimestamp() }));
-
-    // 2. Creamos el NUEVO contrato (con nueva renta o fechas)
-    batch.set(nuevoContratoRef, {
-      id_inquilino: idInquilino,
-      id_unidad: idUnidad,
-      fecha_inicio: FirebaseTimestamp.fromDate(new Date(nuevosDatos.fecha_inicio)),
-      fecha_fin: FirebaseTimestamp.fromDate(new Date(nuevosDatos.fecha_fin)),
-      monto_renta: Number(nuevosDatos.renta_actual),
-      estatus: "activo",
-      createdAt: serverTimestamp()
+    snap.forEach(d => {
+      batch.update(d.ref, { 
+        estatus: "finalizado", 
+        fecha_finalizacion: serverTimestamp(),
+        motivo_cierre: "renovacion" 
+      });
     });
 
-    // 3. Actualizamos al Inquilino con su nuevo ID de contrato actual
+    // 2. NORMALIZACIÓN DE FECHAS
+    const fechaInicio = new Date(nuevosDatos.fecha_inicio + "T12:00:00");
+    const fechaFin = new Date(nuevosDatos.fecha_fin + "T12:00:00");
+
+    // 3. GENERACIÓN DE PERIODOS (Crucial para que aparezcan cobros)
+    // Usamos la función que blindamos al inicio del chat
+    const periodosEsperados = generarPeriodosEsperados(
+      fechaInicio,
+      fechaFin,
+      nuevosDatos.renta_actual
+    );
+
+    // 4. CREAR EL NUEVO CONTRATO
+    batch.set(nuevoContratoRef, {
+      id: nuevoContratoId,
+      id_inquilino: idInquilino,
+      id_unidad: idUnidad,
+      nombre_inquilino: nuevosDatos.nombre_completo || "Inquilino",
+      fecha_inicio: Timestamp.fromDate(fechaInicio),
+      fecha_fin: Timestamp.fromDate(fechaFin),
+      monto_renta: Number(nuevosDatos.renta_actual),
+      monto_deposito: Number(nuevosDatos.monto_deposito || 0),
+      dia_pago: Number(nuevosDatos.dia_pago || 1),
+      estatus: "activo",
+      periodos_esperados: periodosEsperados,
+      total_periodos: periodosEsperados.length,
+      periodos_pagados: 0,
+      es_renovacion: true,
+      fecha_creacion: serverTimestamp()
+    });
+
+    // 5. ACTUALIZAR INQUILINO
     batch.update(inqRef, {
       id_contrato_actual: nuevoContratoId,
       renta_actual: Number(nuevosDatos.renta_actual),
-      // Guardamos el historial de IDs para rastreo rápido
-      historial_contratos: arrayUnion(nuevoContratoId) 
+      id_unidad_actual: idUnidad,
+      estado: "Activo",
+      fecha_inicio_contrato: Timestamp.fromDate(fechaInicio),
+      fecha_fin_contrato: Timestamp.fromDate(fechaFin),
+      historial_contratos: arrayUnion(nuevoContratoId),
+      ultima_modificacion: serverTimestamp()
+    });
+
+    // 6. ACTUALIZAR UNIDAD (Asegurar que la renta y contrato estén al día)
+    batch.update(unidadRef, {
+      id_contrato_actual: nuevoContratoId,
+      renta_mensual: Number(nuevosDatos.renta_actual),
+      estado: "Ocupado" // Por si acaso estaba en otro estado
     });
 
     await batch.commit();
-    return { success: true };
-  } catch (e) { console.error(e); throw e; }
+    console.log(`✅ Renovación exitosa: ${nuevoContratoId}`);
+    return { success: true, idContrato: nuevoContratoId };
+
+  } catch (e) { 
+    console.error("Error crítico en renovarContrato:", e); 
+    throw new Error("ERROR_RENOVACION_CONTRATO"); 
+  }
 };
-/**
- * Valida que no haya solapamiento de fechas con otros contratos EN LA MISMA UNIDAD
- * @param {string} idUnidad - ID de la unidad
- * @param {Date|string} fechaInicio - Fecha de inicio del nuevo contrato
- * @param {Date|string} fechaFin - Fecha de fin del nuevo contrato
- * @param {string} idContratoActual - ID del contrato que se está editando (opcional)
- * @returns {Promise<{valido: boolean, error?: string, message?: string, contratosConflicto?: Array}>}
- */
-export const validarSolapamientoContratos = async (idUnidad, fechaInicio, fechaFin, idContratoActual = null) => {
+// ============================================
+// FUNCIÓN AUXILIAR: VALIDAR SOLAPAMIENTO DE FECHAS
+// ⭐ VERSIÓN MEJORADA - VALIDA CONTRA TODOS LOS CONTRATOS DE LA UNIDAD
+// ============================================
+export const validarSolapamientoContratos = async (idUnidad, fechaInicio, fechaFin, contratoExcluir = null) => {
   try {
-    // Convertir a objetos Date si vienen como strings
-    const inicio = typeof fechaInicio === 'string' ? new Date(fechaInicio + 'T00:00:00') : fechaInicio;
-    const fin = typeof fechaFin === 'string' ? new Date(fechaFin + 'T23:59:59') : fechaFin;
-
-    // Validación básica: fecha de inicio debe ser anterior a fecha de fin
-    if (inicio >= fin) {
-      return {
-        valido: false,
-        error: "FECHAS_INVALIDAS",
-        message: "La fecha de inicio debe ser anterior a la fecha de fin"
-      };
+    console.log("========================================");
+    console.log("🔍 VALIDANDO SOLAPAMIENTO DE FECHAS");
+    console.log("Unidad:", idUnidad);
+    console.log("Nuevo contrato:");
+    console.log("  Inicio:", fechaInicio);
+    console.log("  Fin:", fechaFin);
+    if (contratoExcluir) {
+      console.log("Excluyendo contrato actual:", contratoExcluir);
     }
+    console.log("========================================");
 
-    // 🔍 Consultar TODOS los contratos de ESTA UNIDAD específica
+    // ⭐ OBTENER **TODOS** LOS CONTRATOS DE LA UNIDAD
     const contratosRef = collection(db, "contratos");
     const q = query(contratosRef, where("id_unidad", "==", idUnidad));
     const snapshot = await getDocs(q);
-
+    
+    console.log(`Total de contratos en la unidad: ${snapshot.docs.length}`);
+    
+    const inicio = new Date(fechaInicio);
+    const fin = new Date(fechaFin);
+    
+    // Validación básica
+    if (fin <= inicio) {
+      console.log("❌ ERROR: Fecha de fin no es posterior a fecha de inicio");
+      return {
+        valido: false,
+        error: "FECHAS_INVALIDAS",
+        message: "La fecha de fin debe ser posterior a la fecha de inicio"
+      };
+    }
+    
+    // Array para almacenar conflictos
     const contratosConflicto = [];
-
-    snapshot.forEach(doc => {
-      const contrato = doc.data();
-      const contratoId = doc.id;
-
-      // Si estamos editando, excluir el contrato actual de la validación
-      if (idContratoActual && contratoId === idContratoActual) {
+    
+    // ⭐ REVISAR CADA CONTRATO DE LA UNIDAD
+    snapshot.docs.forEach((docSnap, index) => {
+      const contrato = docSnap.data();
+      const contratoId = docSnap.id;
+      
+      // Saltar el contrato que estamos editando (si aplica)
+      if (contratoExcluir && contratoId === contratoExcluir) {
+        console.log(`\nSaltando contrato actual en edición: ${contratoId}`);
         return;
       }
-
-      // Obtener fechas del contrato existente
-      const contratoInicio = contrato.fecha_inicio?.toDate ? 
-        contrato.fecha_inicio.toDate() : new Date(contrato.fecha_inicio);
-      const contratoFin = contrato.fecha_fin?.toDate ? 
-        contrato.fecha_fin.toDate() : new Date(contrato.fecha_fin);
-
-      // Verificar solapamiento
-      // Dos rangos se solapan si:
-      // - El inicio del nuevo está entre el inicio y fin del existente, O
-      // - El fin del nuevo está entre el inicio y fin del existente, O
-      // - El nuevo contiene completamente al existente
-      const haySolapamiento = (
-        (inicio >= contratoInicio && inicio <= contratoFin) || // Inicio dentro del rango
-        (fin >= contratoInicio && fin <= contratoFin) ||       // Fin dentro del rango
-        (inicio <= contratoInicio && fin >= contratoFin)       // Contiene al existente
-      );
-
+      
+      const contratoInicio = contrato.fecha_inicio.toDate();
+      const contratoFin = contrato.fecha_fin.toDate();
+      
+      console.log(`\nValidando contrato ${index + 1}/${snapshot.docs.length}:`);
+      console.log(`  ID: ${contratoId}`);
+      console.log(`  Inquilino: ${contrato.nombre_inquilino || 'N/A'}`);
+      console.log(`  Rango: ${contratoInicio.toLocaleDateString('es-MX')} → ${contratoFin.toLocaleDateString('es-MX')}`);
+      console.log(`  Estado: ${contrato.estatus}`);
+      
+      // Detectar solapamiento
+      const iniciaEntreMedio = inicio >= contratoInicio && inicio <= contratoFin;
+      const terminaEntreMedio = fin >= contratoInicio && fin <= contratoFin;
+      const envuelveContrato = inicio <= contratoInicio && fin >= contratoFin;
+      
+      const haySolapamiento = iniciaEntreMedio || terminaEntreMedio || envuelveContrato;
+      
       if (haySolapamiento) {
+        console.log(`  ⚠️  CONFLICTO DETECTADO`);
+        
         contratosConflicto.push({
           id: contratoId,
-          inquilino: contrato.nombre_inquilino,
+          inquilino: contrato.nombre_inquilino || 'Desconocido',
           inicio: contratoInicio,
           fin: contratoFin,
-          estatus: contrato.estatus
+          estatus: contrato.estatus || 'desconocido'
         });
+      } else {
+        console.log(`  ✅ Sin conflicto`);
       }
     });
-
+    
+    console.log("========================================");
+    console.log(`RESULTADO: ${contratosConflicto.length} conflicto(s) detectado(s)`);
+    console.log("========================================");
+    
+    // Si hay conflictos, retornar error con detalles
     if (contratosConflicto.length > 0) {
       return {
         valido: false,
@@ -733,15 +1038,250 @@ export const validarSolapamientoContratos = async (idUnidad, fechaInicio, fechaF
         contratosConflicto: contratosConflicto
       };
     }
-
+    
+    console.log("✅ VALIDACIÓN EXITOSA - Sin solapamientos detectados");
     return { valido: true };
-
+    
   } catch (error) {
-    console.error("Error validando solapamiento:", error);
+    console.error("❌ Error validando solapamiento:", error);
     return {
       valido: false,
       error: "ERROR_VALIDACION",
-      message: "Error al validar fechas: " + error.message
+      message: "Error al validar solapamiento: " + error.message
+    };
+  }
+};
+
+// ============================================
+// OBTENER DATOS DE SEGUIMIENTO DE SERVICIOS Y MANTENIMIENTOS
+// ============================================
+export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
+  try {
+    // 1. OBTENER LÍMITES DE SERVICIOS DE LA PROPIEDAD
+    const propRef = doc(db, 'propiedades', 'chilpancingo');
+    const propSnap = await getDoc(propRef);
+    let LIMITE_AGUA_CONFIG = 250;
+    let LIMITE_LUZ_CONFIG = 250;
+    
+    if (propSnap.exists()) {
+      const configData = propSnap.data();
+      LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
+      LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
+    }
+
+    // 2. OBTENER SERVICIOS CONDONADOS DEL PERIODO
+    const pagosRef = collection(db, 'pagos');
+    const qPagos = query(
+      pagosRef,
+      where('periodo', '==', periodo)
+    );
+    const pagosSnapshot = await getDocs(qPagos);
+
+    let agua_condonada_total = 0;
+    let luz_condonada_total = 0;
+    const detalleServicios = [];
+
+    pagosSnapshot.forEach((doc) => {
+      const pago = doc.data();
+      
+      if (pago.servicios) {
+        const {
+          agua_lectura = 0,
+          luz_lectura = 0,
+          limite_agua_aplicado = LIMITE_AGUA_CONFIG,
+          limite_luz_aplicado = LIMITE_LUZ_CONFIG
+        } = pago.servicios;
+
+        const agua_cond = Math.min(agua_lectura, limite_agua_aplicado);
+        const luz_cond = Math.min(luz_lectura, limite_luz_aplicado);
+
+        agua_condonada_total += agua_cond;
+        luz_condonada_total += luz_cond;
+
+        if (agua_cond > 0 || luz_cond > 0) {
+          detalleServicios.push({
+            id_unidad: pago.id_unidad,
+            agua: agua_cond,
+            luz: luz_cond,
+            total: agua_cond + luz_cond
+          });
+        }
+      }
+    });
+
+    // 3. OBTENER MANTENIMIENTOS DEL PERIODO
+    const mantRef = collection(db, 'mantenimientos');
+    const qMant = query(
+      mantRef,
+      where('periodo', '==', periodo),
+      where('estatus', '!=', 'cancelado')
+    );
+    const mantSnapshot = await getDocs(qMant);
+
+    const detalleMantenimientos = [];
+    let total_mantenimiento = 0;
+
+    mantSnapshot.forEach((doc) => {
+      const mant = doc.data();
+      const costo = Number(mant.costo_real || mant.costo_estimado || 0);
+      
+      total_mantenimiento += costo;
+      detalleMantenimientos.push({
+        id: doc.id,
+        id_unidad: mant.id_unidad,
+        concepto: mant.concepto,
+        categoria: mant.categoria,
+        costo: costo,
+        estatus: mant.estatus
+      });
+    });
+
+    // 4. CALCULAR TOTALES
+    const servicios_condonados_total = agua_condonada_total + luz_condonada_total;
+    const total_egresos = total_mantenimiento + servicios_condonados_total;
+
+    return {
+      exito: true,
+      periodo,
+      servicios: {
+        agua: agua_condonada_total,
+        luz: luz_condonada_total,
+        total: servicios_condonados_total,
+        detalle: detalleServicios
+      },
+      mantenimientos: {
+        total: total_mantenimiento,
+        cantidad: detalleMantenimientos.length,
+        detalle: detalleMantenimientos
+      },
+      total_egresos,
+      cantidad_unidades_afectadas: detalleServicios.length
+    };
+  } catch (error) {
+    console.error('Error obteniendo datos de seguimiento:', error);
+    return {
+      exito: false,
+      error: error.message
+    };
+  }
+};
+
+// ============================================
+// CREAR O ACTUALIZAR DOCUMENTO DE SEGUIMIENTO
+// ============================================
+export const crearSeguimientoPeriodo = async (periodo, datos) => {
+  try {
+    const seguimientoRef = doc(db, 'seguimiento', periodo);
+    
+    const documentoSeguimiento = {
+      id: periodo,
+      periodo,
+      anio: parseInt(periodo.split('-')[0]),
+      mes: parseInt(periodo.split('-')[1]),
+      
+      // Servicios condonados
+      servicios_agua: datos.servicios.agua,
+      servicios_luz: datos.servicios.luz,
+      servicios_total: datos.servicios.total,
+      servicios_detalle: datos.servicios.detalle,
+      
+      // Mantenimientos
+      mantenimientos_total: datos.mantenimientos.total,
+      mantenimientos_cantidad: datos.mantenimientos.cantidad,
+      mantenimientos_detalle: datos.mantenimientos.detalle,
+      
+      // Totales
+      total_egresos: datos.total_egresos,
+      cantidad_unidades_afectadas: datos.cantidad_unidades_afectadas,
+      
+      // Estado de pago
+      estado_pago: "pendiente",
+      fecha_pago: null,
+      
+      // Trazabilidad
+      fecha_creacion: serverTimestamp(),
+      fecha_ultima_actualizacion: serverTimestamp()
+    };
+
+    await setDoc(seguimientoRef, documentoSeguimiento);
+    
+    return {
+      exito: true,
+      mensaje: `Seguimiento registrado para ${periodo}`,
+      id: periodo
+    };
+  } catch (error) {
+    console.error('Error creando seguimiento:', error);
+    return {
+      exito: false,
+      error: error.message
+    };
+  }
+};
+
+// ============================================
+// MARCAR SEGUIMIENTO COMO PAGADO
+// ============================================
+export const marcarSeguimientoPagado = async (periodo) => {
+  try {
+    const seguimientoRef = doc(db, 'seguimiento', periodo);
+    
+    await updateDoc(seguimientoRef, {
+      estado_pago: "pagado",
+      fecha_pago: serverTimestamp(),
+      fecha_ultima_actualizacion: serverTimestamp()
+    });
+
+    return {
+      exito: true,
+      mensaje: `Seguimiento marcado como pagado: ${periodo}`
+    };
+  } catch (error) {
+    console.error('Error marcando seguimiento pagado:', error);
+    return {
+      exito: false,
+      error: error.message
+    };
+  }
+};
+
+// ============================================
+// OBTENER TODOS LOS SEGUIMIENTOS
+// ============================================
+export const obtenerSeguimientos = async (filtroEstado = null) => {
+  try {
+    const seguimientoRef = collection(db, 'seguimiento');
+    let q = query(seguimientoRef, orderBy('periodo', 'desc'));
+    
+    if (filtroEstado) {
+      q = query(
+        seguimientoRef,
+        where('estado_pago', '==', filtroEstado),
+        orderBy('periodo', 'desc')
+      );
+    }
+
+    const snapshot = await getDocs(q);
+    const seguimientos = [];
+
+    snapshot.forEach((doc) => {
+      seguimientos.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+
+    return {
+      exito: true,
+      cantidad: seguimientos.length,
+      datos: seguimientos
+    };
+  } catch (error) {
+    console.error('Error obteniendo seguimientos:', error);
+    return {
+      exito: false,
+      error: error.message,
+      datos: []
     };
   }
 };

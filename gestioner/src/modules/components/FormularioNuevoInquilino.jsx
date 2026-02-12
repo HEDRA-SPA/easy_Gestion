@@ -1,11 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
-import { registrarNuevoInquilino, actualizarInquilino, validarSolapamientoContratos } from '../../firebase/acciones'; 
+import { registrarNuevoInquilino, actualizarInquilino, validarSolapamientoContratos } from '../../firebase/acciones';
+import { supabase } from '../../supabase/config';
 
 const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) => {
   const [loading, setLoading] = useState(false);
   const [errorValidacion, setErrorValidacion] = useState(null);
+  
+  // ⭐ NUEVO: Estado para archivos
+  const [archivos, setArchivos] = useState({
+    ine: null,
+    contrato: null,
+    carta: null
+  });
+  
+  const [uploadProgress, setUploadProgress] = useState({
+    ine: false,
+    contrato: false,
+    carta: false
+  });
+
   const [formData, setFormData] = useState({
     nombre_completo: "",
     telefono_contacto: "",
@@ -29,6 +44,86 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         [docKey]: prev.docs[docKey] === 'si' ? 'no' : 'si'
       }
     }));
+  };
+
+  // ⭐ NUEVA FUNCIÓN: Manejar selección de archivos
+  const handleFileChange = (e, tipo) => {
+    const file = e.target.files[0];
+    
+    if (!file) return;
+    
+    // Validar que sea PDF
+    if (file.type !== 'application/pdf') {
+      alert('❌ Solo se permiten archivos PDF');
+      e.target.value = ''; // Resetear input
+      return;
+    }
+    
+    // Validar tamaño (máx 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('❌ El archivo no debe superar 5MB');
+      e.target.value = '';
+      return;
+    }
+    
+    // Guardar archivo en estado
+    setArchivos(prev => ({ ...prev, [tipo]: file }));
+    
+    // Marcar automáticamente el checkbox como "sí"
+    setFormData(prev => ({
+      ...prev,
+      docs: {
+        ...prev.docs,
+        [tipo]: 'si'
+      }
+    }));
+  };
+
+  // ⭐ NUEVA FUNCIÓN: Subir archivo a Supabase
+  const subirArchivo = async (file, tipo, inquilinoId) => {
+    try {
+      setUploadProgress(prev => ({ ...prev, [tipo]: true }));
+      
+      // Crear nombre único: unidad_inquilinoId_tipo_timestamp.pdf
+      const timestamp = Date.now();
+      const fileName = `${unidad.id}_${inquilinoId}_${tipo}_${timestamp}.pdf`;
+      const filePath = `${unidad.id}/${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('documentos-inquilinos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (error) {
+        console.error(`Error subiendo ${tipo}:`, error);
+        throw error;
+      }
+
+      console.log(`✅ ${tipo} subido exitosamente:`, filePath);
+      return filePath;
+      
+    } catch (error) {
+      console.error(`❌ Error al subir ${tipo}:`, error);
+      throw error;
+    } finally {
+      setUploadProgress(prev => ({ ...prev, [tipo]: false }));
+    }
+  };
+
+  // ⭐ NUEVA FUNCIÓN: Actualizar URLs en Firestore
+  const actualizarDocumentosInquilino = async (inquilinoId, urlsDocumentos) => {
+    try {
+      await updateDoc(doc(db, "inquilinos", inquilinoId), {
+        urls_documentos: urlsDocumentos,
+        fecha_actualizacion_docs: new Date()
+      });
+      console.log("✅ URLs de documentos actualizadas en Firestore");
+    } catch (error) {
+      console.error("❌ Error actualizando URLs:", error);
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -150,13 +245,13 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
       return;
     }
 
-    // ⭐ VALIDACIÓN 4: Verificar solapamiento de fechas (SOLO en la misma unidad)
+    // ⭐ VALIDACIÓN 4: Verificar solapamiento de fechas
     try {
       const validacion = await validarSolapamientoContratos(
         unidad.id,
         formData.fecha_inicio_contrato,
         formData.fecha_fin_contrato,
-        formData.id_contrato_actual // Solo cuando estamos editando
+        formData.id_contrato_actual
       );
 
       if (!validacion.valido) {
@@ -191,11 +286,13 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
       // Validaciones de respuesta del backend
       if (resultado && resultado.error === "NO_SE_PUEDE_MODIFICAR_FECHAS") {
         setErrorValidacion(resultado);
+        setLoading(false);
         return;
       }
       
       if (resultado && resultado.error === "NO_SE_PUEDE_MODIFICAR_DEPOSITO") {
         setErrorValidacion(resultado);
+        setLoading(false);
         return;
       }
 
@@ -203,8 +300,43 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         throw new Error(resultado.message);
       }
 
-      alert("✅ Guardado correctamente");
+      // ⭐ SUBIR ARCHIVOS A SUPABASE (después de guardar el inquilino)
+      const inquilinoId = esEdicion ? unidad.id_inquilino : resultado.id_inquilino;
+      const urlsDocumentos = {};
+      let erroresSubida = [];
+
+      for (const [tipo, file] of Object.entries(archivos)) {
+        if (file) {
+          try {
+            const filePath = await subirArchivo(file, tipo, inquilinoId);
+            urlsDocumentos[tipo] = filePath;
+          } catch (error) {
+            console.error(`Error subiendo ${tipo}:`, error);
+            erroresSubida.push(tipo);
+          }
+        }
+      }
+
+      // Actualizar Firestore con las URLs de los documentos
+      if (Object.keys(urlsDocumentos).length > 0) {
+        try {
+          await actualizarDocumentosInquilino(inquilinoId, urlsDocumentos);
+        } catch (error) {
+          console.error("Error guardando URLs en Firestore:", error);
+        }
+      }
+
+      // Mensaje de éxito
+      if (erroresSubida.length > 0) {
+        alert(`✅ Inquilino guardado correctamente\n⚠️ Algunos documentos no se pudieron subir: ${erroresSubida.join(', ')}`);
+      } else if (Object.keys(urlsDocumentos).length > 0) {
+        alert(`✅ Guardado correctamente con ${Object.keys(urlsDocumentos).length} documento(s)`);
+      } else {
+        alert("✅ Guardado correctamente");
+      }
+
       onExito();
+      
     } catch (error) {
       console.error("Error al guardar:", error);
       alert("❌ Error al guardar: " + error.message);
@@ -228,7 +360,7 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
         <button onClick={onCancelar} disabled={loading} className="text-gray-400 hover:text-red-500 font-bold">✖</button>
       </div>
 
-      {/* ⭐ PANEL DE ERRORES DE VALIDACIÓN */}
+      {/* PANEL DE ERRORES DE VALIDACIÓN */}
       {errorValidacion && (
         <div className="mb-6 bg-red-50 border-2 border-red-500 rounded-xl p-4 animate-in slide-in-from-top-2 duration-300">
           <div className="flex items-start gap-3">
@@ -247,7 +379,6 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 {errorValidacion.message}
               </p>
               
-              {/* Mostrar contratos en conflicto */}
               {errorValidacion.detalles?.contratosConflicto && (
                 <div className="bg-white rounded-lg p-3 border border-red-200 mb-3">
                   <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
@@ -282,7 +413,6 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 </div>
               )}
 
-              {/* Detalles de depósito */}
               {errorValidacion.detalles?.deposito_actual !== undefined && (
                 <div className="bg-white rounded-lg p-3 border border-red-200 mb-3">
                   <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
@@ -299,7 +429,6 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 </div>
               )}
 
-              {/* Periodos afectados */}
               {errorValidacion.detalles?.periodos_afectados && (
                 <div className="bg-white rounded-lg p-3 border border-red-200">
                   <p className="text-[10px] font-black text-gray-500 uppercase mb-2">
@@ -318,7 +447,6 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
                 </div>
               )}
 
-              {/* Sugerencia */}
               <div className="mt-3 bg-amber-50 border border-amber-200 rounded p-2">
                 <p className="text-[10px] font-bold text-amber-700">
                   💡 {errorValidacion.detalles?.sugerencia}
@@ -479,6 +607,81 @@ const FormularioNuevoInquilino = ({ unidad, esEdicion, onExito, onCancelar }) =>
               ))}
             </div>
           </div>
+        </div>
+
+        {/* ⭐ NUEVA SECCIÓN: Upload de documentos PDF */}
+        <div className="space-y-3 bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+          <label className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2">
+            <span>📎 Subir Documentos Digitales (PDF)</span>
+            {(uploadProgress.ine || uploadProgress.contrato || uploadProgress.carta) && (
+              <span className="text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full animate-pulse">
+                Subiendo...
+              </span>
+            )}
+          </label>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {['ine', 'contrato', 'carta'].map(doc => (
+              <div key={doc} className="bg-white p-3 rounded-lg border-2 border-gray-200 hover:border-blue-400 transition-all">
+                <label className="flex flex-col gap-2 cursor-pointer group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-gray-700 uppercase">
+                      {doc === 'ine' && '🪪 INE / Identificación'}
+                      {doc === 'contrato' && '📄 Contrato Firmado'}
+                      {doc === 'carta' && '✉️ Carta Responsiva'}
+                    </span>
+                    {archivos[doc] && !uploadProgress[doc] && (
+                      <span className="text-[9px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">
+                        ✓ LISTO
+                      </span>
+                    )}
+                  </div>
+                  
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => handleFileChange(e, doc)}
+                    className="hidden"
+                    disabled={loading || uploadProgress[doc]}
+                  />
+                  
+                  <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-all ${
+                    uploadProgress[doc] 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'border-gray-300 group-hover:border-blue-500 group-hover:bg-blue-50'
+                  }`}>
+                    {uploadProgress[doc] ? (
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="w-6 h-6 border-3 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-[10px] text-blue-600 font-bold">Subiendo...</span>
+                      </div>
+                    ) : archivos[doc] ? (
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-700 truncate">
+                          {archivos[doc].name}
+                        </p>
+                        <p className="text-[9px] text-gray-400">
+                          {(archivos[doc].size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-2xl">📤</span>
+                        <span className="text-[10px] text-gray-400 font-medium">
+                          Click para subir PDF
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            ))}
+          </div>
+          
+          <p className="text-[9px] text-gray-500 italic flex items-center gap-1">
+            <span>ℹ️</span>
+            <span>Máximo 5MB por archivo • Solo formato PDF • Los archivos se suben después de guardar</span>
+          </p>
         </div>
 
         <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">

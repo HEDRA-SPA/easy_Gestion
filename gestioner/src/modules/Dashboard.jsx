@@ -11,6 +11,7 @@ import MantenimientoForm from './components/MantenimientoForm';
 import MantenimientoLista from './components/MantenimientoLista';
 import ServiciosDashboard from './components/ServiciosDashboard';
 import ReporteFinancieroGlobal from './components/Reportefinancieroglobal';
+import RegistroPagoServicios from './components/RegistroPagoServicios';
 
 const Dashboard = ({ 
   resumen, 
@@ -76,8 +77,8 @@ const Dashboard = ({
     { id: 'operacion', icon: 'fas fa-chart-area', label: 'Operación' },
     { id: 'estado-cuenta', icon: 'fas fa-file-alt', label: 'Estado Cuenta' },
     { id: 'archivo', icon: 'fas fa-folder', label: 'Archivo' },
-    { id: 'mantenimiento-form', icon: 'fas fa-wrench', label: 'Nuevo Mant.' },
-    { id: 'mantenimiento-lista', icon: 'fas fa-list', label: 'Historial' },
+    { id: 'mantenimiento-form', icon: 'fas fa-wrench', label: 'Mantenimiento' },
+    { id: 'registro-pago-servicios', icon: 'fas fa-receipt', label: 'Pago Servicios' },
     { id: 'servicios-dashboard', icon: 'fas fa-tint', label: 'Servicios' },
     { id: 'reporte-financiero', icon: 'fas fa-money-bill', label: 'Reporte Fin.' },
     { id: 'gestion-propiedades', icon: 'fas fa-home', label: 'Propiedades' },
@@ -124,7 +125,7 @@ const Dashboard = ({
       </div>
 
         {/* MENU ITEMS */}
-        <nav className="p-3 space-y-1 overflow-y-auto h-[calc(100%-80px)]">
+        <nav className="p-3 space-y-1 overflow-hidden h-auto">
           {menuItems.map((item) => (
             <button
               key={item.id}
@@ -310,12 +311,20 @@ const Dashboard = ({
                   setVista('mantenimiento-lista');
                 }}
               />
+              <br/>
+              <MantenimientoLista />
             </div>
           )}
-
+{/*
           {vista === 'mantenimiento-lista' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <MantenimientoLista />
+              
+            </div>
+          )}
+*/}
+          {vista === 'registro-pago-servicios' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <RegistroPagoServicios />
             </div>
           )}
 

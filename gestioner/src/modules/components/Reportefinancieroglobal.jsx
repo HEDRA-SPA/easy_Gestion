@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
 const ReporteFinancieroGlobal = () => {
@@ -7,6 +7,7 @@ const ReporteFinancieroGlobal = () => {
   const [periodoFin, setPeriodoFin] = useState('');
   const [loading, setLoading] = useState(false);
   const [datosReporte, setDatosReporte] = useState(null);
+  const [seguimientos, setSeguimientos] = useState(null);
 
   useEffect(() => {
     const hoy = new Date();
@@ -243,6 +244,27 @@ const ReporteFinancieroGlobal = () => {
         : 0;
 
       setDatosReporte(resultado);
+
+      // ============================================
+      // OBTENER DATOS DE SEGUIMIENTO
+      // ============================================
+      const seguimientoRef = collection(db, 'seguimiento');
+      const qSeguimiento = query(
+        seguimientoRef,
+        orderBy('periodo', 'desc')
+      );
+      const seguimientoSnapshot = await getDocs(qSeguimiento);
+      const datosSeguimiento = [];
+
+      seguimientoSnapshot.forEach((doc) => {
+        const seg = doc.data();
+        datosSeguimiento.push({
+          id: doc.id,
+          ...seg
+        });
+      });
+
+      setSeguimientos(datosSeguimiento);
     } catch (error) {
       console.error('Error generando reporte:', error);
       alert('Error al generar reporte: ' + error.message);
@@ -717,6 +739,81 @@ const ReporteFinancieroGlobal = () => {
               </div>
             </div>
 
+            ${(() => {
+              if (seguimientos && seguimientos.length > 0) {
+                const periodosAConsultar = [];
+                const [anioInicio, mesInicio] = datosReporte.periodoInicio.split('-').map(Number);
+                const [anioFin, mesFin] = datosReporte.periodoFin.split('-').map(Number);
+
+                let anioActual = anioInicio;
+                let mesActual = mesInicio;
+
+                while (anioActual < anioFin || (anioActual === anioFin && mesActual <= mesFin)) {
+                  periodosAConsultar.push(`${anioActual}-${String(mesActual).padStart(2, '0')}`);
+                  
+                  mesActual++;
+                  if (mesActual > 12) {
+                    mesActual = 1;
+                    anioActual++;
+                  }
+                }
+
+                return `
+                  <div class="seccion" style="background: #f8fafc; border-left: 4px solid #0066cc;">
+                    <div class="seccion-titulo" style="color: #003d99;">
+                      <i style="font-size: 16px;">📋</i> ESTADO DE PAGO DE SERVICIOS POR PERÍODO
+                    </div>
+                    <table style="width: 100%; margin-top: 15px;">
+                      <thead>
+                        <tr style="background: #003d99; color: white;">
+                          <th style="padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase;">Período</th>
+                          <th style="padding: 12px; text-align: center; font-size: 11px; text-transform: uppercase;">Estado</th>
+                          <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Agua</th>
+                          <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Luz</th>
+                          <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Mant.</th>
+                          <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Total</th>
+                          <th style="padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase;">Fecha Pago</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${periodosAConsultar.map(periodo => {
+                          const seguimientoDelPeriodo = seguimientos.find(seg => seg.periodo === periodo);
+                          const estaPagado = seguimientoDelPeriodo?.estado_pago === 'pagado';
+                          const [anio, mes] = periodo.split('-');
+                          const fecha = new Date(anio, mes - 1, 1);
+                          const periodoFormato = fecha.toLocaleDateString('es-MX', { year: 'numeric', month: 'long' });
+                          const fechaPago = seguimientoDelPeriodo?.fecha_pago?.seconds 
+                            ? new Date(seguimientoDelPeriodo.fecha_pago.seconds * 1000).toLocaleDateString('es-MX')
+                            : '-';
+
+                          const bgColor = estaPagado ? '#d1fae5' : '#fef3c7';
+                          const borderColor = estaPagado ? '#10b981' : '#f59e0b';
+                          const estadoTexto = estaPagado ? '✅ PAGADO' : '⏳ PENDIENTE';
+                          const estadoColor = estaPagado ? '#10b981' : '#f59e0b';
+
+                          return `
+                            <tr style="background: ${bgColor}; border-bottom: 1px solid #e5e7eb;">
+                              <td style="padding: 12px; font-weight: bold; color: #1a1a1a;">${periodoFormato}</td>
+                              <td style="padding: 12px; text-align: center; font-weight: bold; color: ${estadoColor};">${estadoTexto}</td>
+                              <td style="padding: 12px; text-align: right; color: #0891b2; font-weight: bold;">$${seguimientoDelPeriodo?.servicios_agua.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
+                              <td style="padding: 12px; text-align: right; color: #f59e0b; font-weight: bold;">$${seguimientoDelPeriodo?.servicios_luz.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
+                              <td style="padding: 12px; text-align: right; color: #ea580c; font-weight: bold;">$${seguimientoDelPeriodo?.mantenimientos_total.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
+                              <td style="padding: 12px; text-align: right; font-weight: bold; color: ${estadoColor};">$${seguimientoDelPeriodo?.total_egresos.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
+                              <td style="padding: 12px; text-align: left; font-size: 12px; color: ${estadoColor};">${fechaPago}</td>
+                            </tr>
+                          `;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                    <p style="font-size: 12px; color: #666; margin-top: 15px; padding: 0 15px;">
+                      <strong>Leyenda:</strong> ✅ PAGADO = Servicios registrados como pagados en el sistema | ⏳ PENDIENTE = Servicios aún no registrados como pagados
+                    </p>
+                  </div>
+                `;
+              }
+              return '';
+            })()}
+
             <div class="footer">
               <p><strong>Reporte Financiero Global</strong></p>
               <p>Generado el ${new Date().toLocaleDateString('es-MX', { 
@@ -862,6 +959,116 @@ const ReporteFinancieroGlobal = () => {
                   La <strong>Utilidad Neta</strong> muestra tus ganancias reales del periodo.
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* NUEVA SECCIÓN: ESTADO DE PAGO DE SERVICIOS POR PERÍODO */}
+          <div className="mt-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-receipt text-blue-600"></i>
+              Estado de Pago de Servicios por Período
+            </h3>
+            
+            <div className="space-y-3">
+              {(() => {
+                const periodosAConsultar = [];
+                const [anioInicio, mesInicio] = datosReporte.periodoInicio.split('-').map(Number);
+                const [anioFin, mesFin] = datosReporte.periodoFin.split('-').map(Number);
+
+                let anioActual = anioInicio;
+                let mesActual = mesInicio;
+
+                while (anioActual < anioFin || (anioActual === anioFin && mesActual <= mesFin)) {
+                  periodosAConsultar.push(`${anioActual}-${String(mesActual).padStart(2, '0')}`);
+                  
+                  mesActual++;
+                  if (mesActual > 12) {
+                    mesActual = 1;
+                    anioActual++;
+                  }
+                }
+
+                return periodosAConsultar.map((periodo) => {
+                  const seguimientoDelPeriodo = seguimientos?.find(seg => seg.periodo === periodo);
+                  const estaPagado = seguimientoDelPeriodo?.estado_pago === 'pagado';
+                  const [anio, mes] = periodo.split('-');
+                  const fecha = new Date(anio, mes - 1, 1);
+                  const periodoFormato = fecha.toLocaleDateString('es-MX', { year: 'numeric', month: 'long' });
+                  const fechaPago = seguimientoDelPeriodo?.fecha_pago?.seconds 
+                    ? new Date(seguimientoDelPeriodo.fecha_pago.seconds * 1000).toLocaleDateString('es-MX')
+                    : null;
+
+                  return (
+                    <div
+                      key={periodo}
+                      className={`rounded-lg p-4 border-l-4 transition-all ${
+                        estaPagado
+                          ? 'bg-green-50 border-green-500 shadow-md'
+                          : 'bg-yellow-50 border-yellow-500 shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className={`text-2xl font-bold ${estaPagado ? 'text-green-600' : 'text-yellow-600'}`}>
+                            {estaPagado ? '✅' : '⏳'}
+                          </span>
+                          <div>
+                            <p className="font-bold text-gray-800">{periodoFormato}</p>
+                            <p className={`text-sm font-semibold ${estaPagado ? 'text-green-700' : 'text-yellow-700'}`}>
+                              {estaPagado ? 'PAGADO' : 'PENDIENTE'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {seguimientoDelPeriodo && (
+                          <div className={`text-right px-4 py-2 rounded-lg ${
+                            estaPagado ? 'bg-green-100' : 'bg-yellow-100'
+                          }`}>
+                            <p className="text-xs text-gray-600 mb-1">Total Egresos</p>
+                            <p className={`text-lg font-bold ${estaPagado ? 'text-green-700' : 'text-yellow-700'}`}>
+                              ${seguimientoDelPeriodo.total_egresos.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                            </p>
+                            {estaPagado && fechaPago && (
+                              <p className="text-xs text-green-600 mt-1">Pagado: {fechaPago}</p>
+                            )}
+                          </div>
+                        )}
+
+                        {!seguimientoDelPeriodo && (
+                          <div className="text-right px-4 py-2 rounded-lg bg-gray-100">
+                            <p className="text-xs text-gray-600">Sin registro</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {seguimientoDelPeriodo && (
+                        <div className="mt-3 pt-3 border-t border-opacity-30 border-current">
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <p className="text-gray-600">💧 Agua</p>
+                              <p className="font-bold text-cyan-600">
+                                ${seguimientoDelPeriodo.servicios_agua.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">⚡ Luz</p>
+                              <p className="font-bold text-yellow-600">
+                                ${seguimientoDelPeriodo.servicios_luz.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">🔧 Mant.</p>
+                              <p className="font-bold text-orange-600">
+                                ${seguimientoDelPeriodo.mantenimientos_total.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
