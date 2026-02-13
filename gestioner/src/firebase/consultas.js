@@ -69,7 +69,14 @@ export const condonarDeuda = async (adeudo, motivo) => {
         estatus: 'condonado',
         medio_pago: 'condonacion',
         fecha_registro: serverTimestamp(),
-        servicios: adeudo.servicios || { agua_lectura: 0, luz_lectura: 0 },
+        servicios: adeudo.servicios || { 
+          agua_lectura: 0, 
+          luz_lectura: 0, 
+          internet_lectura: 0,
+          limite_agua_aplicado: 250,
+          limite_luz_aplicado: 250,
+          limite_internet_aplicado: 250
+        },
         condonado: true,
         fecha_condonacion: serverTimestamp(),
         motivo_condonacion: motivo || "Sin motivo especificado",

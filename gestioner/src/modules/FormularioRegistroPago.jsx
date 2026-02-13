@@ -4,7 +4,7 @@ import { db } from '../firebase/config';
 import { registrarPagoFirebase } from '../firebase/acciones';
 
 const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCancelar }) => {
-  const [limitesPropiedad, setLimitesPropiedad] = useState({ agua: 250, luz: 250 });
+  const [limitesPropiedad, setLimitesPropiedad] = useState({ agua: 250, luz: 250, internet: 250 });
   const [loading, setLoading] = useState(false);
   const [contratoActivo, setContratoActivo] = useState(null);
   const [depositoDisponible, setDepositoDisponible] = useState(0);
@@ -14,6 +14,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
     monto_recibido: 0,
     agua_lectura: 0,
     luz_lectura: 0,
+    internet_lectura: 0,
     medio_pago: "transferencia",
     fecha_pago: new Date().toISOString().split('T')[0],
     cobrar_excedentes_de: "deposito"
@@ -30,7 +31,8 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
           const data = propSnap.data();
           setLimitesPropiedad({
             agua: Number(data.limite_agua || 250),
-            luz: Number(data.limite_luz || 250)
+            luz: Number(data.limite_luz || 250),
+            internet: Number(data.limite_internet || 250)
           });
         }
       } catch (error) {
@@ -82,10 +84,11 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
   const calcularExcedentes = useMemo(() => {
     const excAgua = Math.max(0, Number(formData.agua_lectura) - limitesPropiedad.agua);
     const excLuz = Math.max(0, Number(formData.luz_lectura) - limitesPropiedad.luz);
-    const totalExcedentes = excAgua + excLuz;
+    const excInternet = Math.max(0, Number(formData.internet_lectura) - limitesPropiedad.internet);
+    const totalExcedentes = excAgua + excLuz + excInternet;
     
-    return { excAgua, excLuz, totalExcedentes };
-  }, [formData.agua_lectura, formData.luz_lectura, limitesPropiedad]);
+    return { excAgua, excLuz, excInternet, totalExcedentes };
+  }, [formData.agua_lectura, formData.luz_lectura, formData.internet_lectura, limitesPropiedad]);
 
   // Calcular estado financiero con lógica de depósito
   const estadoFinancieroMes = useMemo(() => {
@@ -236,8 +239,10 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         servicios: {
           agua_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : Number(formData.agua_lectura),
           luz_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : Number(formData.luz_lectura),
+          internet_lectura: estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.internetOriginal : Number(formData.internet_lectura),
           limite_agua_aplicado: limitesPropiedad.agua,
           limite_luz_aplicado: limitesPropiedad.luz,
+          limite_internet_aplicado: limitesPropiedad.internet,
           excedentes_cobrados_de: formData.cobrar_excedentes_de,
           excedentes_del_deposito: estadoFinancieroMes.excedentesAplicados
         }
@@ -316,7 +321,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
           <p className="text-[10px] font-black text-blue-700 mb-2 uppercase italic text-center leading-none">
             {estadoFinancieroMes.existeRegistro ? "⚠️ Lecturas fijadas (Abono adicional)" : "💧 Ingresar lecturas del mes"}
           </p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <div className="relative">
               <span className="absolute left-2 top-2 text-[8px] font-bold text-blue-400 uppercase">Agua (Límite ${limitesPropiedad.agua})</span>
               <input 
@@ -337,6 +342,16 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
                 disabled={estadoFinancieroMes.existeRegistro}
               />
             </div>
+            <div className="relative">
+              <span className="absolute left-2 top-2 text-[8px] font-bold text-purple-500 uppercase">Internet (Límite ${limitesPropiedad.internet})</span>
+              <input 
+                type="number" 
+                className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
+                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.internetOriginal : formData.internet_lectura}
+                onChange={(e) => setFormData({...formData, internet_lectura: Number(e.target.value)})}
+                disabled={estadoFinancieroMes.existeRegistro}
+              />
+            </div>
           </div>
         </div>
 
@@ -344,7 +359,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         {!estadoFinancieroMes.existeRegistro && calcularExcedentes.totalExcedentes > 0 && (
           <div className="bg-purple-50 p-4 rounded-lg border-2 border-purple-300">
             <p className="text-[10px] font-black text-purple-700 mb-3 uppercase text-center">
-              ⚡ Excedentes: ${calcularExcedentes.totalExcedentes} (Agua: ${calcularExcedentes.excAgua} + Luz: ${calcularExcedentes.excLuz})
+              ⚡ Excedentes: ${calcularExcedentes.totalExcedentes} (Agua: ${calcularExcedentes.excAgua} + Luz: ${calcularExcedentes.excLuz} + Internet: ${calcularExcedentes.excInternet})
             </p>
             <div className="space-y-2">
               <label className="flex items-center gap-2 cursor-pointer p-2 rounded hover:bg-purple-100 transition">

@@ -13,6 +13,7 @@ const GestionPropiedades = () => {
     prefijo: '',
     limite_agua: 250,
     limite_luz: 250,
+    limite_internet: 250,
     total_unidades: 0,
     renta_base: 0
   });
@@ -194,6 +195,7 @@ const GestionPropiedades = () => {
         prefijo: nuevaProp.prefijo.toUpperCase().trim(),
         limite_agua: Number(nuevaProp.limite_agua),
         limite_luz: Number(nuevaProp.limite_luz),
+        limite_internet: Number(nuevaProp.limite_internet),
         total_unidades: Number(nuevaProp.total_unidades),
         estado: "Activa",
         fecha_creacion: new Date().toISOString()
@@ -215,7 +217,7 @@ const GestionPropiedades = () => {
       }
 
       await batch.commit();
-      setNuevaProp({ id: '', nombre: '', prefijo: '', limite_agua: 250, limite_luz: 250, total_unidades: 0 });
+      setNuevaProp({ id: '', nombre: '', prefijo: '', limite_agua: 250, limite_luz: 250, limite_internet: 250, total_unidades: 0 });
       alert("🚀 ¡Propiedad y unidades creadas!");
 
     } catch (error) {
@@ -293,8 +295,8 @@ const GestionPropiedades = () => {
               </div>
             </div>
 
-            {/* Fila 2: Unidades, Agua, Luz */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {/* Fila 2: Unidades, Agua, Luz, Internet */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-gray-400 uppercase">Unidades</label>
                 <input 
@@ -322,6 +324,15 @@ const GestionPropiedades = () => {
                   onChange={(e) => setNuevaProp({...nuevaProp, limite_luz: e.target.value})} 
                 />
               </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase">Límite Internet $</label>
+                <input 
+                  type="number" 
+                  className="w-full p-3 bg-gray-50 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none" 
+                  value={nuevaProp.limite_internet} 
+                  onChange={(e) => setNuevaProp({...nuevaProp, limite_internet: e.target.value})} 
+                />
+              </div>
             </div>
 
             {/* Botón */}
@@ -346,7 +357,7 @@ const GestionPropiedades = () => {
                   <th className="p-4">Identificación</th>
                   <th className="p-4 text-center">Prefijo</th>
                   <th className="p-4 text-center">Cant. Unidades</th>
-                  <th className="p-4 text-center">Límites (Agua/Luz)</th>
+                  <th className="p-4 text-center">Límites (Agua/Luz/Internet)</th>
                   <th className="p-4 text-right">Acciones</th>
                 </tr>
               </thead>
@@ -384,6 +395,12 @@ const GestionPropiedades = () => {
                         className="w-16 p-1 bg-amber-50 text-amber-700 rounded font-bold text-xs focus:ring-2 focus:ring-amber-500 outline-none" 
                         defaultValue={prop.limite_luz} 
                         onBlur={(e) => handleUpdateField(prop.id, 'limite_luz', e.target.value)} 
+                      />
+                      <input 
+                        type="number" 
+                        className="w-16 p-1 bg-purple-50 text-purple-700 rounded font-bold text-xs focus:ring-2 focus:ring-purple-500 outline-none" 
+                        defaultValue={prop.limite_internet} 
+                        onBlur={(e) => handleUpdateField(prop.id, 'limite_internet', e.target.value)} 
                       />
                     </td>
                     <td className="p-4 text-right">
@@ -454,7 +471,7 @@ const GestionPropiedades = () => {
                     ⚙️ Límites de Servicios
                   </p>
                   
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     {/* Agua */}
                     <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl p-3 border border-blue-200">
                       <div className="flex items-center gap-2 mb-2">
@@ -485,6 +502,23 @@ const GestionPropiedades = () => {
                           className="w-full pl-7 pr-3 py-2 bg-white border-2 border-amber-200 rounded-lg font-bold text-amber-700 text-center focus:ring-2 focus:ring-amber-500 outline-none" 
                           defaultValue={prop.limite_luz} 
                           onBlur={(e) => handleUpdateField(prop.id, 'limite_luz', e.target.value)} 
+                        />
+                      </div>
+                    </div>
+
+                    {/* Internet */}
+                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-3 border border-purple-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">📡</span>
+                        <span className="text-[8px] font-black text-purple-600 uppercase">Internet</span>
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-600 font-black text-sm">$</span>
+                        <input 
+                          type="number" 
+                          className="w-full pl-7 pr-3 py-2 bg-white border-2 border-purple-200 rounded-lg font-bold text-purple-700 text-center focus:ring-2 focus:ring-purple-500 outline-none" 
+                          defaultValue={prop.limite_internet} 
+                          onBlur={(e) => handleUpdateField(prop.id, 'limite_internet', e.target.value)} 
                         />
                       </div>
                     </div>

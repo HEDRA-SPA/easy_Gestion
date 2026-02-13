@@ -191,6 +191,7 @@ const RegistroPagoServicios = () => {
                   <div className="text-xs text-cyan-100 mt-2 space-y-1">
                     <p>💧 Agua: ${datosActuales.servicios.agua.toLocaleString('es-MX', {minimumFractionDigits: 2})}</p>
                     <p>⚡ Luz: ${datosActuales.servicios.luz.toLocaleString('es-MX', {minimumFractionDigits: 2})}</p>
+                    <p>📡 Internet: ${datosActuales.servicios.internet.toLocaleString('es-MX', {minimumFractionDigits: 2})}</p>
                   </div>
                 </div>
 

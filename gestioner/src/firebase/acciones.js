@@ -1062,11 +1062,13 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
     const propSnap = await getDoc(propRef);
     let LIMITE_AGUA_CONFIG = 250;
     let LIMITE_LUZ_CONFIG = 250;
+    let LIMITE_INTERNET_CONFIG = 250;
     
     if (propSnap.exists()) {
       const configData = propSnap.data();
       LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
       LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
+      LIMITE_INTERNET_CONFIG = Number(configData.limite_internet || 250);
     }
 
     // 2. OBTENER SERVICIOS CONDONADOS DEL PERIODO
@@ -1079,6 +1081,7 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
 
     let agua_condonada_total = 0;
     let luz_condonada_total = 0;
+    let internet_condonada_total = 0;
     const detalleServicios = [];
 
     pagosSnapshot.forEach((doc) => {
@@ -1088,22 +1091,27 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
         const {
           agua_lectura = 0,
           luz_lectura = 0,
+          internet_lectura = 0,
           limite_agua_aplicado = LIMITE_AGUA_CONFIG,
-          limite_luz_aplicado = LIMITE_LUZ_CONFIG
+          limite_luz_aplicado = LIMITE_LUZ_CONFIG,
+          limite_internet_aplicado = LIMITE_INTERNET_CONFIG
         } = pago.servicios;
 
         const agua_cond = Math.min(agua_lectura, limite_agua_aplicado);
         const luz_cond = Math.min(luz_lectura, limite_luz_aplicado);
+        const internet_cond = Math.min(internet_lectura, limite_internet_aplicado);
 
         agua_condonada_total += agua_cond;
         luz_condonada_total += luz_cond;
+        internet_condonada_total += internet_cond;
 
-        if (agua_cond > 0 || luz_cond > 0) {
+        if (agua_cond > 0 || luz_cond > 0 || internet_cond > 0) {
           detalleServicios.push({
             id_unidad: pago.id_unidad,
             agua: agua_cond,
             luz: luz_cond,
-            total: agua_cond + luz_cond
+            internet: internet_cond,
+            total: agua_cond + luz_cond + internet_cond
           });
         }
       }
@@ -1137,7 +1145,7 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
     });
 
     // 4. CALCULAR TOTALES
-    const servicios_condonados_total = agua_condonada_total + luz_condonada_total;
+    const servicios_condonados_total = agua_condonada_total + luz_condonada_total + internet_condonada_total;
     const total_egresos = total_mantenimiento + servicios_condonados_total;
 
     return {
@@ -1146,6 +1154,7 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
       servicios: {
         agua: agua_condonada_total,
         luz: luz_condonada_total,
+        internet: internet_condonada_total,
         total: servicios_condonados_total,
         detalle: detalleServicios
       },
@@ -1182,6 +1191,7 @@ export const crearSeguimientoPeriodo = async (periodo, datos) => {
       // Servicios condonados
       servicios_agua: datos.servicios.agua,
       servicios_luz: datos.servicios.luz,
+      servicios_internet: datos.servicios.internet,
       servicios_total: datos.servicios.total,
       servicios_detalle: datos.servicios.detalle,
       

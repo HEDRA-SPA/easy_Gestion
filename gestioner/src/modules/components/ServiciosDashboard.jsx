@@ -31,12 +31,14 @@ const ServiciosDashboard = () => {
       const propSnap = await getDoc(propRef);
       let LIMITE_AGUA_CONFIG = 250;
       let LIMITE_LUZ_CONFIG = 250;
+      let LIMITE_INTERNET_CONFIG = 250;
       
       if (propSnap.exists()) {
         const configData = propSnap.data();
         LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
         LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
-        console.log(`✅ Límites configurados - Agua: ${LIMITE_AGUA_CONFIG}, Luz: ${LIMITE_LUZ_CONFIG}`);
+        LIMITE_INTERNET_CONFIG = Number(configData.limite_internet || 250);
+        console.log(`✅ Límites configurados - Agua: ${LIMITE_AGUA_CONFIG}, Luz: ${LIMITE_LUZ_CONFIG}, Internet: ${LIMITE_INTERNET_CONFIG}`);
       }
 
       // 🔥 PASO 2: Obtener TODOS los pagos sin filtro de Firestore
@@ -75,71 +77,80 @@ const ServiciosDashboard = () => {
         console.log(`Pagos después de filtrar por propiedad: ${pagosFiltrados.length}`);
       }
 
-      // 🔥 PASO 4: Analizar servicios (LÓGICA ACTUALIZADA del reporte financiero)
+      // 🔥 PASO 4: Analizar servicios (LÓGICA ACTUALIZADA con Internet)
       const analisis = {
         total_pagos_analizados: pagosFiltrados.length,
         total_agua_consumida: 0,
         total_luz_consumida: 0,
+        total_internet_consumida: 0,
         total_agua_condonada: 0,
         total_luz_condonada: 0,
+        total_internet_condonada: 0,
         unidades_con_servicios: 0,
         unidades_excedieron_agua: 0,
         unidades_excedieron_luz: 0,
+        unidades_excedieron_internet: 0,
         excedentes_cobrados_deposito: 0,
         excedentes_cobrados_renta: 0,
         total_excedentes_agua: 0,
         total_excedentes_luz: 0,
+        total_excedentes_internet: 0,
         por_unidad: {},
         por_propiedad: {}
       };
 
-      // 🔥 NUEVA LÓGICA: Igual que ReporteFinancieroGlobal
+      // 🔥 LÓGICA: Igual que ReporteFinancieroGlobal pero con Internet
       pagosFiltrados.forEach(pago => {
         if (pago.servicios) {
           const { 
             agua_lectura = 0, 
             luz_lectura = 0,
-            limite_agua_aplicado = LIMITE_AGUA_CONFIG,  // Usar config de Firestore
-            limite_luz_aplicado = LIMITE_LUZ_CONFIG,    // Usar config de Firestore
+            internet_lectura = 0,
+            limite_agua_aplicado = LIMITE_AGUA_CONFIG,
+            limite_luz_aplicado = LIMITE_LUZ_CONFIG,
+            limite_internet_aplicado = LIMITE_INTERNET_CONFIG,
             excedentes_cobrados_de = 'deposito',
             excedentes_del_deposito = 0
           } = pago.servicios;
 
-          // ✅ CLAVE: Contar TODOS los pagos con servicios, incluso si consumo = 0
-          // Esto asegura que contemos correctamente las unidades
-          console.log(`📊 Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}`);
+          console.log(`📊 Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}, Internet=${internet_lectura}`);
           
           // Solo incrementar si hay consumo REAL mayor a 0
-          if (agua_lectura > 0 || luz_lectura > 0) {
+          if (agua_lectura > 0 || luz_lectura > 0 || internet_lectura > 0) {
             analisis.unidades_con_servicios++;
 
             // Sumar consumos totales
             analisis.total_agua_consumida += agua_lectura;
             analisis.total_luz_consumida += luz_lectura;
+            analisis.total_internet_consumida += internet_lectura;
 
             // 🔥 CALCULAR LO CONDONADO (lo que NOSOTROS pagamos)
-            // Esto es lo que la propiedad absorbe hasta el límite
             const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
             const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
+            const internet_condonada = Math.min(internet_lectura, limite_internet_aplicado);
             
             analisis.total_agua_condonada += agua_condonada;
             analisis.total_luz_condonada += luz_condonada;
+            analisis.total_internet_condonada += internet_condonada;
 
             // Calcular excedentes (lo que el inquilino paga)
             const excedente_agua = Math.max(0, agua_lectura - limite_agua_aplicado);
             const excedente_luz = Math.max(0, luz_lectura - limite_luz_aplicado);
+            const excedente_internet = Math.max(0, internet_lectura - limite_internet_aplicado);
             
             if (excedente_agua > 0) analisis.unidades_excedieron_agua++;
             if (excedente_luz > 0) analisis.unidades_excedieron_luz++;
+            if (excedente_internet > 0) analisis.unidades_excedieron_internet++;
 
             analisis.total_excedentes_agua += excedente_agua;
             analisis.total_excedentes_luz += excedente_luz;
+            analisis.total_excedentes_internet += excedente_internet;
 
             // Contar de dónde se cobraron excedentes
             if (excedentes_cobrados_de === 'deposito') {
               analisis.excedentes_cobrados_deposito += excedentes_del_deposito;
             } else {
-              const total_excedente = excedente_agua + excedente_luz;
+              const total_excedente = excedente_agua + excedente_luz + excedente_internet;
               analisis.excedentes_cobrados_renta += total_excedente;
             }
 
@@ -149,20 +160,26 @@ const ServiciosDashboard = () => {
                 unidad: pago.id_unidad,
                 agua_total: 0,
                 luz_total: 0,
+                internet_total: 0,
                 agua_condonada: 0,
                 luz_condonada: 0,
+                internet_condonada: 0,
                 excedente_agua: 0,
                 excedente_luz: 0,
+                excedente_internet: 0,
                 pagos_con_servicios: 0
               };
             }
 
             analisis.por_unidad[pago.id_unidad].agua_total += agua_lectura;
             analisis.por_unidad[pago.id_unidad].luz_total += luz_lectura;
+            analisis.por_unidad[pago.id_unidad].internet_total += internet_lectura;
             analisis.por_unidad[pago.id_unidad].agua_condonada += agua_condonada;
             analisis.por_unidad[pago.id_unidad].luz_condonada += luz_condonada;
+            analisis.por_unidad[pago.id_unidad].internet_condonada += internet_condonada;
             analisis.por_unidad[pago.id_unidad].excedente_agua += excedente_agua;
             analisis.por_unidad[pago.id_unidad].excedente_luz += excedente_luz;
+            analisis.por_unidad[pago.id_unidad].excedente_internet += excedente_internet;
             analisis.por_unidad[pago.id_unidad].pagos_con_servicios++;
 
             // Agrupar por propiedad (usando prefijo de unidad)
@@ -172,27 +189,33 @@ const ServiciosDashboard = () => {
                 prefijo,
                 agua_total: 0,
                 luz_total: 0,
+                internet_total: 0,
                 agua_condonada: 0,
                 luz_condonada: 0,
+                internet_condonada: 0,
                 excedente_agua: 0,
                 excedente_luz: 0,
+                excedente_internet: 0,
                 unidades: 0
               };
             }
 
             analisis.por_propiedad[prefijo].agua_total += agua_lectura;
             analisis.por_propiedad[prefijo].luz_total += luz_lectura;
+            analisis.por_propiedad[prefijo].internet_total += internet_lectura;
             analisis.por_propiedad[prefijo].agua_condonada += agua_condonada;
             analisis.por_propiedad[prefijo].luz_condonada += luz_condonada;
+            analisis.por_propiedad[prefijo].internet_condonada += internet_condonada;
             analisis.por_propiedad[prefijo].excedente_agua += excedente_agua;
             analisis.por_propiedad[prefijo].excedente_luz += excedente_luz;
+            analisis.por_propiedad[prefijo].excedente_internet += excedente_internet;
             analisis.por_propiedad[prefijo].unidades++;
           }
         }
       });
 
       console.log('✅ Análisis completado:', analisis);
-      console.log(`📊 Resumen: ${analisis.unidades_con_servicios} unidades, Agua condonada: $${analisis.total_agua_condonada}, Luz condonada: $${analisis.total_luz_condonada}`);
+      console.log(`📊 Resumen: ${analisis.unidades_con_servicios} unidades, Agua: $${analisis.total_agua_condonada}, Luz: $${analisis.total_luz_condonada}, Internet: $${analisis.total_internet_condonada}`);
       
       setDatos(analisis);
       setPagosDetalle(pagosFiltrados);
@@ -232,22 +255,23 @@ const ServiciosDashboard = () => {
   };
 
   return (
-     <div className="w-full no-print">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+    <div className="w-full no-print">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold text-gray-800 flex items-center gap-2">
-              <span className="text-2xl sm:text-3xl"><i className="fa-solid fa-users"></i></span>
-             Dashboard de Servicios
+              <span className="text-2xl sm:text-3xl"><i className="fa-solid fa-chart-line"></i></span>
+              Dashboard de Servicios
             </h1>
             <p className="text-sm sm:text-base text-gray-500 mt-1">
-              Análisis de consumo de agua y luz por periodo
+              Análisis de consumo de agua, luz e internet por periodo
             </p>
           </div>
         </div>
       </div>
+
       {/* Filtros */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
+      <div className="bg-white p-6 rounded-lg shadow-md mb-6">
         <h2 className="text-xl font-semibold mb-4 text-gray-800">Filtros de Análisis</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -291,9 +315,7 @@ const ServiciosDashboard = () => {
 
         <div className="flex gap-2 mb-4">
           <button
-            onClick={() => {
-              setPeriodoFin(periodoInicio);
-            }}
+            onClick={() => setPeriodoFin(periodoInicio)}
             className="px-4 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 text-sm"
           >
             Mensual
@@ -324,12 +346,12 @@ const ServiciosDashboard = () => {
       {/* Resultados */}
       {datos && (
         <>
-          {/* Estadísticas Principales */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Estadísticas Principales - 5 cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-6 text-white">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-blue-100 text-sm font-medium">Unidades con Servicios</p>
+                  <p className="text-blue-100 text-sm font-medium">Unidades</p>
                   <p className="text-4xl font-bold mt-1">{datos.unidades_con_servicios}</p>
                 </div>
                 <div className="bg-blue-400 bg-opacity-30 rounded-lg p-3">
@@ -338,29 +360,29 @@ const ServiciosDashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-blue-100 text-sm">De {datos.total_pagos_analizados} pagos analizados</p>
+              <p className="text-blue-100 text-xs">con servicios</p>
             </div>
 
             <div className="bg-gradient-to-br from-cyan-500 to-cyan-600 rounded-lg shadow-lg p-6 text-white">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-cyan-100 text-sm font-medium">Agua Condonada</p>
-                  <p className="text-4xl font-bold mt-1">${datos.total_agua_condonada}</p>
+                  <p className="text-cyan-100 text-sm font-medium">Agua</p>
+                  <p className="text-3xl font-bold mt-1">${datos.total_agua_condonada}</p>
                 </div>
                 <div className="bg-cyan-400 bg-opacity-30 rounded-lg p-3">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                 </div>
               </div>
-              <p className="text-cyan-100 text-sm">De ${datos.total_agua_consumida} consumidos</p>
+              <p className="text-cyan-100 text-xs">condonados</p>
             </div>
 
             <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg shadow-lg p-6 text-white">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-yellow-100 text-sm font-medium">Luz Condonada</p>
-                  <p className="text-4xl font-bold mt-1">${datos.total_luz_condonada}</p>
+                  <p className="text-yellow-100 text-sm font-medium">Luz</p>
+                  <p className="text-3xl font-bold mt-1">${datos.total_luz_condonada}</p>
                 </div>
                 <div className="bg-yellow-400 bg-opacity-30 rounded-lg p-3">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -368,15 +390,30 @@ const ServiciosDashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-yellow-100 text-sm">De ${datos.total_luz_consumida} consumidos</p>
+              <p className="text-yellow-100 text-xs">condonados</p>
+            </div>
+
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-6 text-white">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="text-purple-100 text-sm font-medium">Internet</p>
+                  <p className="text-3xl font-bold mt-1">${datos.total_internet_condonada}</p>
+                </div>
+                <div className="bg-purple-400 bg-opacity-30 rounded-lg p-3">
+                  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                  </svg>
+                </div>
+              </div>
+              <p className="text-purple-100 text-xs">condonados</p>
             </div>
 
             <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg shadow-lg p-6 text-white">
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <p className="text-red-100 text-sm font-medium">Total Excedentes</p>
-                  <p className="text-4xl font-bold mt-1">
-                    ${datos.total_excedentes_agua + datos.total_excedentes_luz}
+                  <p className="text-red-100 text-sm font-medium">Excedentes</p>
+                  <p className="text-3xl font-bold mt-1">
+                    ${datos.total_excedentes_agua + datos.total_excedentes_luz + datos.total_excedentes_internet}
                   </p>
                 </div>
                 <div className="bg-red-400 bg-opacity-30 rounded-lg p-3">
@@ -385,12 +422,12 @@ const ServiciosDashboard = () => {
                   </svg>
                 </div>
               </div>
-              <p className="text-red-100 text-sm">Cobrados a inquilinos</p>
+              <p className="text-red-100 text-xs">totales</p>
             </div>
           </div>
 
-          {/* Detalles de Excedentes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Detalles de Excedentes por Servicio */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900">Excedentes por Servicio</h3>
               <div className="space-y-4">
@@ -401,14 +438,14 @@ const ServiciosDashboard = () => {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div 
-                      className="bg-cyan-500 h-3 rounded-full"
+                      className="bg-cyan-500 h-3 rounded-full transition-all duration-500"
                       style={{ 
-                        width: `${(datos.total_excedentes_agua / (datos.total_excedentes_agua + datos.total_excedentes_luz || 1)) * 100}%`
+                        width: `${(datos.total_excedentes_agua / (datos.total_excedentes_agua + datos.total_excedentes_luz + datos.total_excedentes_internet || 1)) * 100}%`
                       }}
                     ></div>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">
-                    {datos.unidades_excedieron_agua} unidades excedieron el límite
+                    {datos.unidades_excedieron_agua} unidades excedieron
                   </p>
                 </div>
 
@@ -419,14 +456,32 @@ const ServiciosDashboard = () => {
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-3">
                     <div 
-                      className="bg-yellow-500 h-3 rounded-full"
+                      className="bg-yellow-500 h-3 rounded-full transition-all duration-500"
                       style={{ 
-                        width: `${(datos.total_excedentes_luz / (datos.total_excedentes_agua + datos.total_excedentes_luz || 1)) * 100}%`
+                        width: `${(datos.total_excedentes_luz / (datos.total_excedentes_agua + datos.total_excedentes_luz + datos.total_excedentes_internet || 1)) * 100}%`
                       }}
                     ></div>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">
-                    {datos.unidades_excedieron_luz} unidades excedieron el límite
+                    {datos.unidades_excedieron_luz} unidades excedieron
+                  </p>
+                </div>
+
+                <div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-gray-700">Internet</span>
+                    <span className="font-bold text-purple-600">${datos.total_excedentes_internet}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className="bg-purple-500 h-3 rounded-full transition-all duration-500"
+                      style={{ 
+                        width: `${(datos.total_excedentes_internet / (datos.total_excedentes_agua + datos.total_excedentes_luz + datos.total_excedentes_internet || 1)) * 100}%`
+                      }}
+                    ></div>
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {datos.unidades_excedieron_internet} unidades excedieron
                   </p>
                 </div>
               </div>
@@ -468,7 +523,7 @@ const ServiciosDashboard = () => {
 
           {/* Por Propiedad */}
           {Object.keys(datos.por_propiedad).length > 0 && (
-            <div className="bg-white rounded-lg shadow-md p-6">
+            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
               <h3 className="text-lg font-semibold mb-4 text-gray-900">Resumen por Propiedad</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {Object.values(datos.por_propiedad).map((prop) => (
@@ -479,29 +534,53 @@ const ServiciosDashboard = () => {
                         <span className="text-gray-600">Unidades:</span>
                         <span className="font-semibold">{prop.unidades}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Agua consumida:</span>
-                        <span className="font-semibold text-cyan-600">${prop.agua_total}</span>
+                      
+                      {/* Agua */}
+                      <div className="border-t pt-2">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Agua consumida:</span>
+                          <span className="font-semibold text-cyan-600">${prop.agua_total}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Agua condonada:</span>
+                          <span className="font-semibold text-cyan-700">${prop.agua_condonada}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Excedente agua:</span>
+                          <span className="font-semibold text-red-600">${prop.excedente_agua}</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Agua condonada:</span>
-                        <span className="font-semibold text-cyan-700">${prop.agua_condonada}</span>
+
+                      {/* Luz */}
+                      <div className="border-t pt-2">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Luz consumida:</span>
+                          <span className="font-semibold text-yellow-600">${prop.luz_total}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Luz condonada:</span>
+                          <span className="font-semibold text-yellow-700">${prop.luz_condonada}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Excedente luz:</span>
+                          <span className="font-semibold text-red-600">${prop.excedente_luz}</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Excedente agua:</span>
-                        <span className="font-semibold text-red-600">${prop.excedente_agua}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Luz consumida:</span>
-                        <span className="font-semibold text-yellow-600">${prop.luz_total}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Luz condonada:</span>
-                        <span className="font-semibold text-yellow-700">${prop.luz_condonada}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Excedente luz:</span>
-                        <span className="font-semibold text-red-600">${prop.excedente_luz}</span>
+
+                      {/* Internet */}
+                      <div className="border-t pt-2">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Internet consumido:</span>
+                          <span className="font-semibold text-purple-600">${prop.internet_total}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Internet condonado:</span>
+                          <span className="font-semibold text-purple-700">${prop.internet_condonada}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Excedente internet:</span>
+                          <span className="font-semibold text-red-600">${prop.excedente_internet}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -520,28 +599,37 @@ const ServiciosDashboard = () => {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Unidad
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-cyan-600 uppercase tracking-wider">
                         Agua Consumida
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Agua Condonada
+                      <th className="px-4 py-3 text-left text-xs font-medium text-cyan-600 uppercase tracking-wider">
+                        Condonada
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Excedente Agua
+                      <th className="px-4 py-3 text-left text-xs font-medium text-cyan-600 uppercase tracking-wider">
+                        Excedente
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-yellow-600 uppercase tracking-wider">
                         Luz Consumida
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Luz Condonada
+                      <th className="px-4 py-3 text-left text-xs font-medium text-yellow-600 uppercase tracking-wider">
+                        Condonada
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Excedente Luz
+                      <th className="px-4 py-3 text-left text-xs font-medium text-yellow-600 uppercase tracking-wider">
+                        Excedente
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-600 uppercase tracking-wider">
+                        Internet Consumido
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-600 uppercase tracking-wider">
+                        Condonado
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-purple-600 uppercase tracking-wider">
+                        Excedente
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-red-600 uppercase tracking-wider">
                         Total Excedente
                       </th>
                     </tr>
@@ -551,38 +639,57 @@ const ServiciosDashboard = () => {
                       .sort((a, b) => a.unidad.localeCompare(b.unidad))
                       .map((unidad) => (
                         <tr key={unidad.unidad} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                             {unidad.unidad}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          
+                          {/* Agua */}
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                             ${unidad.agua_total}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600 font-semibold">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-cyan-600 font-semibold">
                             ${unidad.agua_condonada}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
                             <span className={unidad.excedente_agua > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}>
                               ${unidad.excedente_agua}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                          
+                          {/* Luz */}
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                             ${unidad.luz_total}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-yellow-600 font-semibold">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-yellow-600 font-semibold">
                             ${unidad.luz_condonada}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
                             <span className={unidad.excedente_luz > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}>
                               ${unidad.excedente_luz}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                          
+                          {/* Internet */}
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                            ${unidad.internet_total}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-purple-600 font-semibold">
+                            ${unidad.internet_condonada}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm">
+                            <span className={unidad.excedente_internet > 0 ? 'text-red-600 font-semibold' : 'text-gray-400'}>
+                              ${unidad.excedente_internet}
+                            </span>
+                          </td>
+                          
+                          {/* Total */}
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-bold">
                             <span className={
-                              (unidad.excedente_agua + unidad.excedente_luz) > 0 
+                              (unidad.excedente_agua + unidad.excedente_luz + unidad.excedente_internet) > 0 
                                 ? 'text-red-600' 
                                 : 'text-green-600'
                             }>
-                              ${unidad.excedente_agua + unidad.excedente_luz}
+                              ${unidad.excedente_agua + unidad.excedente_luz + unidad.excedente_internet}
                             </span>
                           </td>
                         </tr>
@@ -606,7 +713,7 @@ const ServiciosDashboard = () => {
             <div className="ml-3">
               <p className="text-sm text-yellow-700">
                 No se encontraron pagos con servicios registrados en el periodo seleccionado.
-                Verifica que los pagos tengan el campo "servicios" con lecturas de agua o luz mayores a 0.
+                Verifica que los pagos tengan el campo "servicios" con lecturas de agua, luz o internet mayores a 0.
               </p>
             </div>
           </div>

@@ -39,6 +39,7 @@ Información centralizada de propiedades con límites de servicios.
 | `total_unidades` | Number | Cantidad total de unidades |
 | `limite_agua` | Number | Límite de agua condonada (m³) |
 | `limite_luz` | Number | Límite de luz condonada (kWh) |
+| `limite_internet` | Number | Límite de internet condonado ($) |
 
 ---
 
@@ -132,7 +133,7 @@ Cada pago registrado en el sistema.
 | `medio_pago` | String | "transferencia", "efectivo", "deposito", "condonacion" |
 | `fecha_pago_realizado` | Date | Fecha del pago |
 | `fecha_registro` | Timestamp | Fecha de registro en BD |
-| `servicios` | Object | Detalles de agua/luz |
+| `servicios` | Object | Detalles de agua/luz/internet |
 | `condonado` | Boolean | ¿Es condonación? |
 | `fecha_condonacion` | Timestamp | Fecha de condonación |
 | `motivo_condonacion` | String | Motivo de la condonación |
@@ -145,8 +146,10 @@ Cada pago registrado en el sistema.
 {
   agua_lectura: 150,                      // Lectura de agua
   luz_lectura: 200,                       // Lectura de luz
+  internet_lectura: 75,                   // Lectura de internet
   limite_agua_aplicado: 250,              // Límite utilizado
   limite_luz_aplicado: 250,               // Límite utilizado
+  limite_internet_aplicado: 250,          // Límite utilizado
   excedentes_cobrados_de: "renta",        // O "deposito"
   excedentes_del_deposito: 0              // Monto descargado del depósito
 }
@@ -286,8 +289,10 @@ Tickets de mantenimiento de unidades.
   servicios: {
     agua_lectura: 150,
     luz_lectura: 200,
+    internet_lectura: 75,
     limite_agua_aplicado: 250,
     limite_luz_aplicado: 250,
+    limite_internet_aplicado: 250,
     excedentes_cobrados_de: "renta" | "deposito",
     excedentes_del_deposito: monto_si_de_deposito
   },

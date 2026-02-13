@@ -16,8 +16,10 @@ const ModalEditarPago = ({ pago, esPrimerPago, onCerrar, onExito }) => {
     fecha_pago_realizado: '',
     agua_lectura: 0,
     luz_lectura: 0,
+    internet_lectura: 0,
     limite_agua_aplicado: 250,
     limite_luz_aplicado: 250,
+    limite_internet_aplicado: 250,
     cobrar_excedentes_de: 'renta'
   });
 
@@ -47,8 +49,10 @@ const ModalEditarPago = ({ pago, esPrimerPago, onCerrar, onExito }) => {
           fecha_pago_realizado: f,
           agua_lectura: Number(datos.servicios?.agua_lectura || 0),
           luz_lectura: Number(datos.servicios?.luz_lectura || 0),
+          internet_lectura: Number(datos.servicios?.internet_lectura || 0),
           limite_agua_aplicado: Number(datos.servicios?.limite_agua_aplicado || 250),
           limite_luz_aplicado: Number(datos.servicios?.limite_luz_aplicado || 250),
+          limite_internet_aplicado: Number(datos.servicios?.limite_internet_aplicado || 250),
           cobrar_excedentes_de: datos.servicios?.excedentes_cobrados_de || 'renta'
         });
 
@@ -67,8 +71,9 @@ const ModalEditarPago = ({ pago, esPrimerPago, onCerrar, onExito }) => {
   const excedentes = useMemo(() => {
     const a = Math.max(0, formData.agua_lectura - formData.limite_agua_aplicado);
     const l = Math.max(0, formData.luz_lectura - formData.limite_luz_aplicado);
-    return { total: a + l };
-  }, [formData.agua_lectura, formData.luz_lectura, formData.limite_agua_aplicado, formData.limite_luz_aplicado]);
+    const i = Math.max(0, formData.internet_lectura - formData.limite_internet_aplicado);
+    return { agua: a, luz: l, internet: i, total: a + l + i };
+  }, [formData.agua_lectura, formData.luz_lectura, formData.internet_lectura, formData.limite_agua_aplicado, formData.limite_luz_aplicado, formData.limite_internet_aplicado]);
 const handleGuardar = async () => {
   if (formData.monto_pagado <= 0) return alert("Monto inválido");
 
@@ -103,7 +108,8 @@ const handleGuardar = async () => {
       // 🔥 CALCULAR EXCEDENTES PREVIOS CORRECTAMENTE
       const aguaPrev = Math.max(0, (datosPagoReal.servicios?.agua_lectura || 0) - (datosPagoReal.servicios?.limite_agua_aplicado || 250));
       const luzPrev = Math.max(0, (datosPagoReal.servicios?.luz_lectura || 0) - (datosPagoReal.servicios?.limite_luz_aplicado || 250));
-      const excedentesPreviosTotal = aguaPrev + luzPrev;
+      const internetPrev = Math.max(0, (datosPagoReal.servicios?.internet_lectura || 0) - (datosPagoReal.servicios?.limite_internet_aplicado || 250));
+      const excedentesPreviosTotal = aguaPrev + luzPrev + internetPrev;
       
       // Determinar la RENTA BASE SIN excedentes (el monto original que debería tener el periodo)
       let rentaBasePura = montoEsperadoOriginal;
@@ -176,8 +182,10 @@ const handleGuardar = async () => {
           ...pagoData.servicios,
           agua_lectura: formData.agua_lectura,
           luz_lectura: formData.luz_lectura,
+          internet_lectura: formData.internet_lectura,
           limite_agua_aplicado: formData.limite_agua_aplicado,
           limite_luz_aplicado: formData.limite_luz_aplicado,
+          limite_internet_aplicado: formData.limite_internet_aplicado,
           excedentes_cobrados_de: formData.cobrar_excedentes_de,
           excedentes_del_deposito: isEditingThisOne ? nuevoDescuentoDep : 0
         };
@@ -247,7 +255,7 @@ const handleGuardar = async () => {
           {/* Sección de Lecturas: SOLO SI ES EL PRIMER PAGO */}
           {esPrimerPago ? (
             <div className="space-y-4 border-t pt-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div className="relative">
                   <label className="text-[9px] font-bold text-blue-500 uppercase">Lectura Agua</label>
                   <input 
@@ -264,6 +272,15 @@ const handleGuardar = async () => {
                     value={formData.luz_lectura}
                     onChange={(e) => setFormData({...formData, luz_lectura: Number(e.target.value)})}
                     className="w-full p-2 bg-yellow-50 border border-yellow-100 rounded font-bold"
+                  />
+                </div>
+                <div className="relative">
+                  <label className="text-[9px] font-bold text-purple-600 uppercase">Lectura Internet</label>
+                  <input 
+                    type="number"
+                    value={formData.internet_lectura}
+                    onChange={(e) => setFormData({...formData, internet_lectura: Number(e.target.value)})}
+                    className="w-full p-2 bg-purple-50 border border-purple-100 rounded font-bold"
                   />
                 </div>
               </div>

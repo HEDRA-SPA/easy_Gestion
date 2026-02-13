@@ -55,10 +55,12 @@ const ReporteFinancieroGlobal = () => {
       const propSnap = await getDoc(propRef);
       let LIMITE_AGUA_CONFIG = 250; // Valores por defecto por seguridad
       let LIMITE_LUZ_CONFIG = 250;
+      let LIMITE_INTERNET_CONFIG = 250;
       if (propSnap.exists()) {
         const configData = propSnap.data();
         LIMITE_AGUA_CONFIG = Number(configData.limite_agua || 250);
         LIMITE_LUZ_CONFIG = Number(configData.limite_luz || 250);
+        LIMITE_INTERNET_CONFIG = Number(configData.limite_internet || 250);
       }
       const resultado = {
         periodoInicio,
@@ -78,12 +80,13 @@ const ReporteFinancieroGlobal = () => {
             por_estatus: {}
           },
           servicios: {
-            agua_condonada: 0,
-            luz_condonada: 0,
-            total_condonado: 0,
-            cantidad_unidades: 0,
-            detalle: []
-          },
+              agua_condonada: 0,
+              luz_condonada: 0,
+              internet_condonada: 0,
+              total_condonado: 0,
+              cantidad_unidades: 0,
+              detalle: []
+            },
           total_egresos: 0
         },
         balance: {
@@ -192,32 +195,37 @@ const ReporteFinancieroGlobal = () => {
       );
       const pagosSnapshot = await getDocs(qPagos);
 
-      pagosSnapshot.forEach((doc) => {
+        pagosSnapshot.forEach((doc) => {
         const pago = doc.data();
         
         if (pago.servicios) {
           const {
             agua_lectura = 0,
             luz_lectura = 0,
+            internet_lectura = 0,
             limite_agua_aplicado = LIMITE_AGUA_CONFIG, 
-            limite_luz_aplicado = LIMITE_LUZ_CONFIG
+            limite_luz_aplicado = LIMITE_LUZ_CONFIG,
+            limite_internet_aplicado = LIMITE_INTERNET_CONFIG
           } = pago.servicios;
 
           // Calcular lo condonado (lo que NOSOTROS pagamos)
           const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
           const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
+          const internet_condonada = Math.min(internet_lectura, limite_internet_aplicado);
 
           resultado.egresos.servicios.agua_condonada += agua_condonada;
           resultado.egresos.servicios.luz_condonada += luz_condonada;
+          resultado.egresos.servicios.internet_condonada += internet_condonada;
 
-          if (agua_condonada > 0 || luz_condonada > 0) {
+          if (agua_condonada > 0 || luz_condonada > 0 || internet_condonada > 0) {
             resultado.egresos.servicios.cantidad_unidades++;
             resultado.egresos.servicios.detalle.push({
               periodo: pago.periodo,
               unidad: pago.id_unidad,
               agua_condonada,
               luz_condonada,
-              total_condonado: agua_condonada + luz_condonada
+              internet_condonada,
+              total_condonado: agua_condonada + luz_condonada + internet_condonada
             });
           }
         }
@@ -225,7 +233,8 @@ const ReporteFinancieroGlobal = () => {
 
       resultado.egresos.servicios.total_condonado = 
         resultado.egresos.servicios.agua_condonada + 
-        resultado.egresos.servicios.luz_condonada;
+        resultado.egresos.servicios.luz_condonada +
+        resultado.egresos.servicios.internet_condonada;
 
       // ============================================
       // 4. CALCULAR TOTALES Y BALANCE
@@ -472,7 +481,7 @@ const ReporteFinancieroGlobal = () => {
 
             .stats-mini {
               display: grid;
-              grid-template-columns: repeat(3, 1fr);
+              grid-template-columns: repeat(4, 1fr);
               gap: 10px;
               margin: 15px 0;
             }
@@ -646,14 +655,18 @@ const ReporteFinancieroGlobal = () => {
                   <div class="stat-label">Agua Condonada</div>
                   <div class="stat-valor" style="color: #06b6d4;">$${datosReporte.egresos.servicios.agua_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
                 </div>
-                <div class="stat-box">
-                  <div class="stat-label">Luz Condonada</div>
-                  <div class="stat-valor" style="color: #f59e0b;">$${datosReporte.egresos.servicios.luz_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
-                </div>
-                <div class="stat-box">
-                  <div class="stat-label">Total Condonado</div>
-                  <div class="stat-valor" style="color: #dc2626;">$${datosReporte.egresos.servicios.total_condonado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
-                </div>
+                  <div class="stat-box">
+                    <div class="stat-label">Luz Condonada</div>
+                    <div class="stat-valor" style="color: #f59e0b;">$${datosReporte.egresos.servicios.luz_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+                  </div>
+                  <div class="stat-box">
+                    <div class="stat-label">Internet Condonada</div>
+                    <div class="stat-valor" style="color: #7c3aed;">$${datosReporte.egresos.servicios.internet_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+                  </div>
+                  <div class="stat-box">
+                    <div class="stat-label">Total Condonado</div>
+                    <div class="stat-valor" style="color: #dc2626;">$${datosReporte.egresos.servicios.total_condonado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</div>
+                  </div>
               </div>
 
               ${datosReporte.egresos.servicios.detalle.length > 0 ? `
@@ -664,6 +677,7 @@ const ReporteFinancieroGlobal = () => {
                       <th>UNIDAD</th>
                       <th style="text-align: right;">AGUA</th>
                       <th style="text-align: right;">LUZ</th>
+                      <th style="text-align: right;">INTERNET</th>
                       <th style="text-align: right;">TOTAL</th>
                     </tr>
                   </thead>
@@ -674,6 +688,7 @@ const ReporteFinancieroGlobal = () => {
                         <td><strong>${s.unidad}</strong></td>
                         <td style="text-align: right;">$${s.agua_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                         <td style="text-align: right;">$${s.luz_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+                        <td style="text-align: right;">$${s.internet_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                         <td style="text-align: right;" class="numero-negativo">$${s.total_condonado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                       </tr>
                     `).join('')}
@@ -681,6 +696,7 @@ const ReporteFinancieroGlobal = () => {
                       <td colspan="2">TOTAL SERVICIOS</td>
                       <td style="text-align: right;">$${datosReporte.egresos.servicios.agua_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                       <td style="text-align: right;">$${datosReporte.egresos.servicios.luz_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
+                      <td style="text-align: right;">$${datosReporte.egresos.servicios.internet_condonada.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                       <td style="text-align: right;">$${datosReporte.egresos.servicios.total_condonado.toLocaleString('es-MX', {minimumFractionDigits: 2})}</td>
                     </tr>
                   </tbody>
@@ -770,6 +786,7 @@ const ReporteFinancieroGlobal = () => {
                           <th style="padding: 12px; text-align: center; font-size: 11px; text-transform: uppercase;">Estado</th>
                           <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Agua</th>
                           <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Luz</th>
+                          <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Internet</th>
                           <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Mant.</th>
                           <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Total</th>
                           <th style="padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase;">Fecha Pago</th>
@@ -797,6 +814,7 @@ const ReporteFinancieroGlobal = () => {
                               <td style="padding: 12px; text-align: center; font-weight: bold; color: ${estadoColor};">${estadoTexto}</td>
                               <td style="padding: 12px; text-align: right; color: #0891b2; font-weight: bold;">$${seguimientoDelPeriodo?.servicios_agua.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
                               <td style="padding: 12px; text-align: right; color: #f59e0b; font-weight: bold;">$${seguimientoDelPeriodo?.servicios_luz.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
+                              <td style="padding: 12px; text-align: right; color: #7c3aed; font-weight: bold;">$${seguimientoDelPeriodo?.servicios_internet?.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
                               <td style="padding: 12px; text-align: right; color: #ea580c; font-weight: bold;">$${seguimientoDelPeriodo?.mantenimientos_total.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
                               <td style="padding: 12px; text-align: right; font-weight: bold; color: ${estadoColor};">$${seguimientoDelPeriodo?.total_egresos.toLocaleString('es-MX', {minimumFractionDigits: 2}) || '0.00'}</td>
                               <td style="padding: 12px; text-align: left; font-size: 12px; color: ${estadoColor};">${fechaPago}</td>
@@ -955,7 +973,7 @@ const ReporteFinancieroGlobal = () => {
               <div className="ml-3">
                 <p className="text-sm text-blue-700">
                   <strong>Reporte Completo:</strong> Este análisis incluye todos los ingresos cobrados por rentas, 
-                  menos todos los gastos de mantenimientos y servicios condonados (agua y luz que pagamos nosotros). 
+                  menos todos los gastos de mantenimientos y servicios condonados (agua, luz e internet que pagamos nosotros). 
                   La <strong>Utilidad Neta</strong> muestra tus ganancias reales del periodo.
                 </p>
               </div>
@@ -1043,7 +1061,7 @@ const ReporteFinancieroGlobal = () => {
 
                       {seguimientoDelPeriodo && (
                         <div className="mt-3 pt-3 border-t border-opacity-30 border-current">
-                          <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="grid grid-cols-4 gap-2 text-xs">
                             <div>
                               <p className="text-gray-600">💧 Agua</p>
                               <p className="font-bold text-cyan-600">
@@ -1054,6 +1072,12 @@ const ReporteFinancieroGlobal = () => {
                               <p className="text-gray-600">⚡ Luz</p>
                               <p className="font-bold text-yellow-600">
                                 ${seguimientoDelPeriodo.servicios_luz.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">🌐 Internet</p>
+                              <p className="font-bold text-purple-600">
+                                ${seguimientoDelPeriodo.servicios_internet?.toLocaleString('es-MX', {minimumFractionDigits: 2})}
                               </p>
                             </div>
                             <div>

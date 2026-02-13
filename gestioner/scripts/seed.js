@@ -111,7 +111,15 @@ const seedDatabase = async () => {
       anio: 2025,
       monto_renta: mes === 10 ? 6800 : 5700, // Ajuste de renta en Octubre según tu data
       monto_pagado: esDiciembre ? 0 : (mes === 11 ? 5000 : 5700),
-      servicios: { luz_lectura: 0, agua_lectura: 0, excedente_total: 0 },
+      servicios: { 
+        luz_lectura: 0, 
+        agua_lectura: 0, 
+        internet_lectura: 0,
+        limite_agua_aplicado: 250,
+        limite_luz_aplicado: 250,
+        limite_internet_aplicado: 250,
+        excedente_total: 0 
+      },
       estatus: esDiciembre ? "pendiente" : "pagado",
       medio_pago: "transferencia",
       notas: esDiciembre ? "Pendiente de pago" : "",
@@ -133,7 +141,15 @@ const seedDatabase = async () => {
       anio: 2025,
       monto_renta: 6800,
       monto_pagado: 6800,
-      servicios: { luz_lectura: 0, agua_lectura: 0, excedente_total: 0 },
+      servicios: { 
+        luz_lectura: 0, 
+        agua_lectura: 0, 
+        internet_lectura: 0,
+        limite_agua_aplicado: 250,
+        limite_luz_aplicado: 250,
+        limite_internet_aplicado: 250,
+        excedente_total: 0 
+      },
       estatus: "pagado",
       medio_pago: "transferencia",
       notas: "Carga inicial historial",
