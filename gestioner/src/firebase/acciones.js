@@ -1053,6 +1053,131 @@ export const validarSolapamientoContratos = async (idUnidad, fechaInicio, fechaF
 };
 
 // ============================================
+// OBTENER CONTRATOS PRÓXIMOS A VENCER
+// ============================================
+export const obtenerContratosPorVencer = async (diasAnticipacion = 30) => {
+  try {
+    const contratoRef = collection(db, 'contratos');
+    const qContratos = query(
+      contratoRef,
+      where('estatus', '==', 'activo')
+    );
+    
+    const snapshot = await getDocs(qContratos);
+    const hoy = new Date();
+    const contratosPorVencer = [];
+
+    snapshot.forEach((doc) => {
+      const contrato = doc.data();
+      
+      // Convertir fecha_fin a Date
+      const fechaFin = contrato.fecha_fin?.toDate 
+        ? contrato.fecha_fin.toDate() 
+        : new Date(contrato.fecha_fin);
+      
+      // Calcular días restantes
+      const diasRestantes = Math.ceil((fechaFin - hoy) / (1000 * 60 * 60 * 24));
+      
+      // Filtrar solo los que vencen en los próximos X días y no estén vencidos
+      if (diasRestantes > 0 && diasRestantes <= diasAnticipacion) {
+        contratosPorVencer.push({
+          id: doc.id,
+          id_unidad: contrato.id_unidad,
+          nombre_inquilino: contrato.nombre_inquilino,
+          monto_renta: contrato.monto_renta,
+          fecha_inicio: contrato.fecha_inicio?.toDate 
+            ? contrato.fecha_inicio.toDate() 
+            : new Date(contrato.fecha_inicio),
+          fecha_fin: fechaFin,
+          diasRestantes,
+          id_inquilino: contrato.id_inquilino,
+          dia_pago: contrato.dia_pago,
+          urgencia: diasRestantes <= 7 ? 'alta' : diasRestantes <= 15 ? 'media' : 'baja'
+        });
+      }
+    });
+
+    // Ordenar por días restantes (más urgentes primero)
+    contratosPorVencer.sort((a, b) => a.diasRestantes - b.diasRestantes);
+
+    return {
+      exito: true,
+      cantidad: contratosPorVencer.length,
+      datos: contratosPorVencer
+    };
+  } catch (error) {
+    console.error('Error obteniendo contratos por vencer:', error);
+    return {
+      exito: false,
+      error: error.message,
+      datos: []
+    };
+  }
+};
+
+// ============================================
+// OBTENER CONTRATOS VENCIDOS
+// ============================================
+export const obtenerContratosVencidos = async () => {
+  try {
+    const contratoRef = collection(db, 'contratos');
+    const qContratos = query(
+      contratoRef,
+      where('estatus', '==', 'activo')
+    );
+    
+    const snapshot = await getDocs(qContratos);
+    const hoy = new Date();
+    const contratosVencidos = [];
+
+    snapshot.forEach((doc) => {
+      const contrato = doc.data();
+      
+      // Convertir fecha_fin a Date
+      const fechaFin = contrato.fecha_fin?.toDate 
+        ? contrato.fecha_fin.toDate() 
+        : new Date(contrato.fecha_fin);
+      
+      // Calcular días vencidos
+      const diasVencidos = Math.ceil((hoy - fechaFin) / (1000 * 60 * 60 * 24));
+      
+      // Filtrar solo los que ya vencieron
+      if (diasVencidos > 0) {
+        contratosVencidos.push({
+          id: doc.id,
+          id_unidad: contrato.id_unidad,
+          nombre_inquilino: contrato.nombre_inquilino,
+          monto_renta: contrato.monto_renta,
+          fecha_inicio: contrato.fecha_inicio?.toDate 
+            ? contrato.fecha_inicio.toDate() 
+            : new Date(contrato.fecha_inicio),
+          fecha_fin: fechaFin,
+          diasVencidos,
+          id_inquilino: contrato.id_inquilino,
+          dia_pago: contrato.dia_pago
+        });
+      }
+    });
+
+    // Ordenar por días vencidos (más tiempo vencido primero)
+    contratosVencidos.sort((a, b) => b.diasVencidos - a.diasVencidos);
+
+    return {
+      exito: true,
+      cantidad: contratosVencidos.length,
+      datos: contratosVencidos
+    };
+  } catch (error) {
+    console.error('Error obteniendo contratos vencidos:', error);
+    return {
+      exito: false,
+      error: error.message,
+      datos: []
+    };
+  }
+};
+
+// ============================================
 // OBTENER DATOS DE SEGUIMIENTO DE SERVICIOS Y MANTENIMIENTOS
 // ============================================
 export const obtenerDatosSeguimientoPeriodo = async (periodo) => {

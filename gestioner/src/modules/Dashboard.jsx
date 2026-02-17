@@ -12,6 +12,7 @@ import MantenimientoLista from './components/MantenimientoLista';
 import ServiciosDashboard from './components/ServiciosDashboard';
 import ReporteFinancieroGlobal from './components/Reportefinancieroglobal';
 import RegistroPagoServicios from './components/RegistroPagoServicios';
+import ContratosPorVencer from './components/ContratosPorVencer';
 
 const Dashboard = ({ 
   resumen, 
@@ -284,6 +285,14 @@ const Dashboard = ({
                 onVerPagos={onVerPagos} 
                 onRefrescar={handleBuscar}
               />
+              
+              {/* Contratos Próximos a Vencer */}
+              <div className="mt-12">
+                <div className="inline-block bg-slate-900 text-white px-5 py-1.5 rounded-t-xl text-[10px] font-black uppercase border-b-2 border-blue-500 mb-4">
+                  Contratos Próximos a Vencer
+                </div>
+                <ContratosPorVencer onIrAArchivo={() => setVista('archivo')} />
+              </div>
             </>
           )}
 
