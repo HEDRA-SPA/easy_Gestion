@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { eliminarInquilinoCompleto } from '../firebase/acciones';
 import HistorialContratos from './HistorialContratos';
 import FormularioRenovacionArchivo from './components/FormularioRenovacionArchivo';
 
@@ -13,6 +14,8 @@ const ArchivoInquilinos = ({ unidades }) => {
   const [pagosDelContrato, setPagosDelContrato] = useState([]);
   const [loadingPagos, setLoadingPagos] = useState(false);
   const [mostrarModalRenovacion, setMostrarModalRenovacion] = useState(false);
+  const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false);
+  const [loadingEliminar, setLoadingEliminar] = useState(false);
 
   // 1. Cargar TODOS los inquilinos (activos e inactivos)
   useEffect(() => {
@@ -100,6 +103,39 @@ const ArchivoInquilinos = ({ unidades }) => {
     
     setPagosDelContrato(periodosValidos);
   }, [contratoSeleccionado]);
+
+  // Función para eliminar inquilino
+  const handleEliminarInquilino = async () => {
+    setLoadingEliminar(true);
+    try {
+      const resultado = await eliminarInquilinoCompleto(inquilinoSeleccionado.id);
+      
+      if (resultado.exito) {
+        console.log("✅ Inquilino eliminado correctamente:", resultado);
+        alert(`✅ Inquilino eliminado correctamente\n\nEliminados:\n- 1 Inquilino\n- ${resultado.datosEliminados.contratos} Contratos\n- ${resultado.datosEliminados.pagos} Pagos\n- ${resultado.datosEliminados.unidades_limpiadas} Unidades limpiadas\n- ${resultado.datosEliminados.mantenimientos_limpiados} Mantenimientos limpiados`);
+        
+        // Recargar la lista de inquilinos
+        const snap = await getDocs(collection(db, "inquilinos"));
+        const inquilinos = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        inquilinos.sort((a, b) => {
+          if (a.activo === b.activo) {
+            return (a.nombre_completo || "").localeCompare(b.nombre_completo || "");
+          }
+          return a.activo ? 1 : -1;
+        });
+        setTodosInquilinos(inquilinos);
+        setInquilinoSeleccionado(null);
+        setMostrarModalEliminar(false);
+      } else {
+        alert(`❌ Error: ${resultado.mensaje}`);
+      }
+    } catch (error) {
+      console.error("Error eliminando inquilino:", error);
+      alert("❌ Error al eliminar el inquilino");
+    } finally {
+      setLoadingEliminar(false);
+    }
+  };
 
   const filtrados = todosInquilinos.filter(inq => 
     (inq.nombre_completo || "").toLowerCase().includes(busqueda.toLowerCase())
@@ -210,12 +246,20 @@ const ArchivoInquilinos = ({ unidades }) => {
 
           {/* BOTÓN DE REACTIVACIÓN (solo si está inactivo) */}
           {inquilinoSeleccionado && !inquilinoSeleccionado.activo && (
-            <div className="p-4 bg-gray-50 border-t">
+            <div className="p-3 sm:p-4 bg-gray-50 border-t space-y-2">
               <button 
                 onClick={() => setMostrarModalRenovacion(true)} 
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 sm:p-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
               >
                 <span></span> Re-activar y Renovar
+              </button>
+              
+              <button 
+                onClick={() => setMostrarModalEliminar(true)}
+                disabled={loadingEliminar}
+                className="w-full bg-red-600 hover:bg-red-700 text-white p-3 sm:p-4 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>🗑️</span> {loadingEliminar ? 'Eliminando...' : 'Eliminar Inquilino'}
               </button>
             </div>
           )}
@@ -498,6 +542,82 @@ const ArchivoInquilinos = ({ unidades }) => {
                   }}
                   onCancelar={() => setMostrarModalRenovacion(false)}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN */}
+          {mostrarModalEliminar && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="animate-in zoom-in-95 duration-200 w-full max-w-md">
+                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  {/* HEADER ROJO */}
+                  <div className="bg-red-600 p-6 text-white">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">⚠️</span>
+                      <div>
+                        <h2 className="text-xl font-black uppercase">Eliminación Permanente</h2>
+                        <p className="text-red-100 text-xs mt-1">Esta acción no se puede deshacer</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CONTENIDO */}
+                  <div className="p-6 space-y-4">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                      <p className="text-sm font-bold text-red-900 mb-2">Se eliminará:</p>
+                      <ul className="text-xs text-red-800 space-y-1">
+                        <li>✓ El inquilino: <strong>{inquilinoSeleccionado?.nombre_completo}</strong></li>
+                        <li>✓ Todos sus contratos ({todosContratos.length})</li>
+                        <li>✓ Todos sus pagos registrados</li>
+                        <li>✓ Toda su información de la base de datos</li>
+                      </ul>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <p className="text-xs text-blue-900">
+                        🔒 Esta operación solo es posible porque el inquilino <strong>no tiene contrato activo</strong>. 
+                        Se recomienda usar esta función solo para datos de prueba.
+                      </p>
+                    </div>
+
+                    <p className="text-xs text-gray-600">
+                      ¿Estás seguro de que deseas continuar? Escribe "ELIMINAR" en el campo de abajo para confirmar.
+                    </p>
+
+                    <input
+                      type="text"
+                      id="confirmacionEliminar"
+                      placeholder='Escribe "ELIMINAR" para confirmar'
+                      className="w-full p-3 border border-gray-300 rounded-xl text-sm font-medium focus:ring-2 focus:ring-red-500 outline-none transition-all"
+                    />
+                  </div>
+
+                  {/* BOTONES */}
+                  <div className="p-6 bg-gray-50 border-t flex gap-3">
+                    <button
+                      onClick={() => setMostrarModalEliminar(false)}
+                      disabled={loadingEliminar}
+                      className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-900 py-3 rounded-xl font-black uppercase text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById("confirmacionEliminar");
+                        if (input.value === "ELIMINAR") {
+                          handleEliminarInquilino();
+                        } else {
+                          alert("Debes escribir 'ELIMINAR' para confirmar");
+                        }
+                      }}
+                      disabled={loadingEliminar}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-xl font-black uppercase text-sm transition-all shadow-lg shadow-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loadingEliminar ? "Eliminando..." : "Eliminar Permanentemente"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

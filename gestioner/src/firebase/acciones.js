@@ -371,6 +371,25 @@ export const verificarContratoPagado = async (idContrato) => {
       : `Existen ${pendientes.length} periodos con saldo pendiente`
   };
 };
+
+/**
+ * Valida si un periodo está completamente pagado o condonado
+ * @param {Object} periodo - Objeto del periodo a validar
+ * @returns {boolean} - true si está pagado o condonado correctamente
+ */
+const esPeriodoPagado = (periodo) => {
+  // Si el estatus es "pagado"
+  if (periodo.estatus === 'pagado') return true;
+  
+  // Si el estatus es "condonado" Y el saldo restante es 0
+  if (periodo.estatus === 'condonado' && periodo.saldo_restante === 0) return true;
+  
+  // Si el monto pagado es igual o mayor al esperado Y el saldo restante es 0
+  if (periodo.monto_pagado >= periodo.monto_esperado && periodo.saldo_restante === 0) return true;
+  
+  return false;
+};
+
 // ============================================
 // FINALIZAR CONTRATO
 // ============================================
@@ -392,16 +411,22 @@ export const finalizarContrato = async (idUnidad, idInquilino, idContrato) => {
 
       if (!contratoSnap.exists()) throw new Error("El contrato no existe.");
       
-      // --- VALIDACIÓN DE PAGOS ---
+      // --- VALIDACIÓN DE PAGOS MEJORADA ---
       const datosContrato = contratoSnap.data();
       const periodos = datosContrato.periodos_esperados || [];
       
-      // Filtramos los periodos que no están pagados
-      const pendientes = periodos.filter(p => p.estatus !== "pagado");
+      // Filtramos los periodos que NO están pagados ni condonados correctamente
+      const pendientes = periodos.filter(p => !esPeriodoPagado(p));
 
       if (pendientes.length > 0) {
-        // Si hay pendientes, lanzamos un error descriptivo
-        throw new Error(`No se puede finalizar: Tiene ${pendientes.length} periodos pendientes de pago.`);
+        // Generar mensaje detallado con los periodos pendientes
+        const detallesPendientes = pendientes.map(p => 
+          `${p.periodo} (Saldo: $${p.saldo_restante || 0})`
+        ).join(', ');
+        
+        throw new Error(
+          `No se puede finalizar el contrato. Tiene ${pendientes.length} periodo(s) pendiente(s): ${detallesPendientes}`
+        );
       }
       // ----------------------------
 
@@ -1417,6 +1442,178 @@ export const obtenerSeguimientos = async (filtroEstado = null) => {
       exito: false,
       error: error.message,
       datos: []
+    };
+  }
+};
+
+// ============================================
+// ELIMINAR INQUILINO COMPLETO (CON TODOS SUS DATOS)
+// ⭐ FUNCIÓN DESTRUCTIVA - SOLO PARA INQUILINOS SIN CONTRATO ACTIVO
+// ============================================
+export const eliminarInquilinoCompleto = async (idInquilino) => {
+  if (!idInquilino) {
+    return { exito: false, mensaje: "ID de inquilino inválido" };
+  }
+
+  try {
+    return await runTransaction(db, async (transaction) => {
+      // 1. FRENO DE SEGURIDAD: Obtener inquilino y verificar que no tenga contrato activo
+      const inqRef = doc(db, "inquilinos", idInquilino);
+      const inqSnap = await transaction.get(inqRef);
+
+      if (!inqSnap.exists()) {
+        throw new Error("INQUILINO_NO_EXISTE");
+      }
+
+      const inquilino = inqSnap.data();
+
+      // Verificar que NO tenga contrato activo
+      if (inquilino.activo === true) {
+        throw new Error("INQUILINO_ACTIVO_NO_PUEDE_ELIMINARSE");
+      }
+
+      console.log("🗑️ Iniciando eliminación completa de inquilino:", idInquilino);
+
+      // 2. OBTENER TODOS LOS CONTRATOS DEL INQUILINO
+      const contratosSnap = await getDocs(
+        query(
+          collection(db, "contratos"),
+          where("id_inquilino", "==", idInquilino)
+        )
+      );
+
+      const contratosIds = [];
+      contratosSnap.forEach(doc => {
+        contratosIds.push(doc.id);
+      });
+
+      console.log(`  📄 ${contratosIds.length} contratos encontrados`);
+
+      // 3. OBTENER TODOS LOS PAGOS DEL INQUILINO
+      const pagosSnap = await getDocs(
+        query(
+          collection(db, "pagos"),
+          where("id_inquilino", "==", idInquilino)
+        )
+      );
+
+      const pagosIds = [];
+      pagosSnap.forEach(doc => {
+        pagosIds.push(doc.id);
+      });
+
+      console.log(`  💰 ${pagosIds.length} pagos encontrados`);
+
+      // 4. OBTENER TODAS LAS UNIDADES ASOCIADAS
+      const unidadesSnap = await getDocs(collection(db, "unidades"));
+      const unidadesAActualizar = [];
+
+      unidadesSnap.forEach(doc => {
+        const unidad = doc.data();
+        if (unidad.id_inquilino === idInquilino) {
+          unidadesAActualizar.push(doc.id);
+        }
+      });
+
+      console.log(`  🏠 ${unidadesAActualizar.length} unidades a limpiar`);
+
+      // 5. OBTENER MANTENIMIENTOS ASOCIADOS AL INQUILINO
+      const mantenimientosSnap = await getDocs(collection(db, "mantenimientos"));
+      const mantenimientosAActualizar = [];
+
+      mantenimientosSnap.forEach(doc => {
+        const mant = doc.data();
+        // Buscar si el inquilino está en el array de inquilinos_afectados o como id_inquilino_afectado
+        const tieneInquilino = 
+          mant.id_inquilino_afectado === idInquilino || 
+          (Array.isArray(mant.inquilinos_afectados) && mant.inquilinos_afectados.includes(idInquilino));
+        
+        if (tieneInquilino) {
+          mantenimientosAActualizar.push({
+            id: doc.id,
+            data: mant
+          });
+        }
+      });
+
+      console.log(`  🔧 ${mantenimientosAActualizar.length} mantenimientos a limpiar`);
+
+      // 6. PREPARAR BATCH PARA ELIMINAR TODO
+      // Eliminar inquilino
+      transaction.delete(inqRef);
+
+      // Eliminar todos los contratos
+      contratosIds.forEach(contratoId => {
+        const contratoRef = doc(db, "contratos", contratoId);
+        transaction.delete(contratoRef);
+      });
+
+      // Eliminar todos los pagos
+      pagosIds.forEach(pagoId => {
+        const pagoRef = doc(db, "pagos", pagoId);
+        transaction.delete(pagoRef);
+      });
+
+      // Actualizar unidades: limpiar referencia al inquilino
+      unidadesAActualizar.forEach(unidadId => {
+        const unidadRef = doc(db, "unidades", unidadId);
+        transaction.update(unidadRef, {
+          id_inquilino: null,
+          nombre_inquilino: null,
+          renta_mensual: null,
+          estado: "Libre",
+          id_contrato_actual: null,
+          no_personas: null
+        });
+      });
+
+      // Actualizar mantenimientos: limpiar referencias al inquilino
+      mantenimientosAActualizar.forEach(mant => {
+        const mantRef = doc(db, "mantenimientos", mant.id);
+        const mantData = mant.data;
+        
+        // Limpiar id_inquilino_afectado si coincide
+        if (mantData.id_inquilino_afectado === idInquilino) {
+          mantData.id_inquilino_afectado = null;
+        }
+        
+        // Limpiar del array inquilinos_afectados si existe
+        if (Array.isArray(mantData.inquilinos_afectados)) {
+          mantData.inquilinos_afectados = mantData.inquilinos_afectados.filter(id => id !== idInquilino);
+        }
+        
+        transaction.update(mantRef, mantData);
+      });
+
+      console.log("✅ Eliminación completada (transacción confirmada)");
+
+      return {
+        exito: true,
+        mensaje: "Inquilino eliminado completamente",
+        datosEliminados: {
+          inquilino: idInquilino,
+          contratos: contratosIds.length,
+          pagos: pagosIds.length,
+          unidades_limpiadas: unidadesAActualizar.length,
+          mantenimientos_limpiados: mantenimientosAActualizar.length
+        }
+      };
+    });
+  } catch (error) {
+    console.error("❌ Error eliminando inquilino:", error);
+
+    // Mapear errores específicos
+    let mensaje = "Error al eliminar el inquilino";
+    if (error.message === "INQUILINO_NO_EXISTE") {
+      mensaje = "El inquilino no existe en la base de datos";
+    } else if (error.message === "INQUILINO_ACTIVO_NO_PUEDE_ELIMINARSE") {
+      mensaje = "No se puede eliminar un inquilino con contrato activo";
+    }
+
+    return {
+      exito: false,
+      mensaje: mensaje,
+      error: error.message
     };
   }
 };
