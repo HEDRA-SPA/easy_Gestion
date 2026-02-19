@@ -185,22 +185,33 @@ export const registrarPagoFirebase = async (datosPago) => {
 
   // 3. CALCULAR SALDOS Y EXCEDENTES (Freno de Aritmética)
   const montoRecibido = Number(datosPago.monto_pagado) || 0;
-  const totalEsperado = Number(datosPago.total_esperado_periodo) || 0;
-  
-  // Obtenemos el periodo específico del array del contrato
-  const periodosActualizados = contratoActual.periodos_esperados.map((p) => {
+
+  // 3.a --- Buscar pagos EXISTENTES del mismo periodo y misma unidad
+  const pagosRef = collection(db, "pagos");
+  const qExist = query(pagosRef, where("id_unidad", "==", datosPago.id_unidad), where("periodo", "==", datosPago.periodo));
+  const snapExist = await getDocs(qExist);
+  const pagosExistentes = snapExist.docs.map(d => ({ id: d.id, ...d.data() }));
+  const sumaPagosPrevios = pagosExistentes.reduce((s, p) => s + Number(p.monto_pagado || 0), 0);
+  const idsPagosPrevios = pagosExistentes.map(p => p.id);
+
+  // 3.b --- Determinar monto esperado real desde el contrato (CON FIABILIDAD)
+  const periodoDef = (contratoActual.periodos_esperados || []).find(p => p.periodo === datosPago.periodo);
+  const totalEsperado = periodoDef ? Number(periodoDef.monto_esperado || 0) : Number(datosPago.total_esperado_periodo || 0);
+
+  // 3.c --- Recalcular periodo usando los pagos existentes (más robusto que confiar en p.monto_pagado)
+  const periodosActualizados = (contratoActual.periodos_esperados || []).map((p) => {
     if (p.periodo === datosPago.periodo) {
-      const nuevoMontoPagadoAcumulado = p.monto_pagado + montoRecibido;
+      const nuevoMontoPagadoAcumulado = sumaPagosPrevios + montoRecibido;
       const nuevoSaldo = Math.max(0, totalEsperado - nuevoMontoPagadoAcumulado);
-      
+
       return {
         ...p,
-        monto_esperado: totalEsperado, // Actualizamos por si hubo excedentes de servicios
+        monto_esperado: totalEsperado, // Mantener consistente con el contrato
         monto_pagado: nuevoMontoPagadoAcumulado,
         saldo_restante: nuevoSaldo,
-        estatus: nuevoSaldo <= 0 ? "pagado" : "parcial",
+        estatus: nuevoSaldo <= 0 ? "pagado" : (nuevoMontoPagadoAcumulado > 0 ? "parcial" : "pendiente"),
         fecha_ultimo_pago: Timestamp.now(),
-        id_pagos: [...(p.id_pagos || []), idPago]
+        id_pagos: [...new Set([...(p.id_pagos || []), ...idsPagosPrevios, idPago])]
       };
     }
     return p;
@@ -218,6 +229,18 @@ export const registrarPagoFirebase = async (datosPago) => {
 
   // 6. PREPARAR EL BATCH
   // Registro en /pagos
+  // Sanitizar objeto servicios para evitar valores `undefined` en Firestore
+  const serviciosSanitizados = {
+    agua_lectura: Number(datosPago.servicios?.agua_lectura || 0),
+    luz_lectura: Number(datosPago.servicios?.luz_lectura || 0),
+    internet_lectura: Number(datosPago.servicios?.internet_lectura || 0),
+    limite_agua_aplicado: Number(datosPago.servicios?.limite_agua_aplicado || 0),
+    limite_luz_aplicado: Number(datosPago.servicios?.limite_luz_aplicado || 0),
+    limite_internet_aplicado: Number(datosPago.servicios?.limite_internet_aplicado || 0),
+    excedentes_cobrados_de: datosPago.servicios?.excedentes_cobrados_de || null,
+    excedentes_del_deposito: Number(datosPago.servicios?.excedentes_del_deposito || 0)
+  };
+
   batch.set(nuevoPagoRef, {
     ...datosPago,
     id: idPago,
@@ -226,6 +249,7 @@ export const registrarPagoFirebase = async (datosPago) => {
     fecha_pago_realizado: datosPago.fecha_pago_realizado 
       ? new Date(datosPago.fecha_pago_realizado) 
       : new Date(),
+    servicios: serviciosSanitizados,
     fecha_registro: serverTimestamp()
   });
 
@@ -1234,36 +1258,51 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
     let internet_condonada_total = 0;
     const detalleServicios = [];
 
-    pagosSnapshot.forEach((doc) => {
-      const pago = doc.data();
-      
-      if (pago.servicios) {
-        const {
-          agua_lectura = 0,
-          luz_lectura = 0,
-          internet_lectura = 0,
-          limite_agua_aplicado = LIMITE_AGUA_CONFIG,
-          limite_luz_aplicado = LIMITE_LUZ_CONFIG,
-          limite_internet_aplicado = LIMITE_INTERNET_CONFIG
-        } = pago.servicios;
+    // Deduplicar por id_inquilino + id_unidad antes de procesar.
+    // Si hay varios documentos (abonos parciales) para la misma unidad/inquilino/periodo,
+    // todos comparten los mismos valores de servicios, así que solo procesamos UNO por clave.
+    const pagosVistos = new Map(); // clave: "id_inquilino_id_unidad" → pago
 
-        const agua_cond = Math.min(agua_lectura, limite_agua_aplicado);
-        const luz_cond = Math.min(luz_lectura, limite_luz_aplicado);
-        const internet_cond = Math.min(internet_lectura, limite_internet_aplicado);
+    pagosSnapshot.forEach((docSnap) => {
+      const pago = docSnap.data();
+      if (!pago.servicios) return;
 
-        agua_condonada_total += agua_cond;
-        luz_condonada_total += luz_cond;
-        internet_condonada_total += internet_cond;
+      const clave = `${pago.id_inquilino}_${pago.id_unidad}`;
 
-        if (agua_cond > 0 || luz_cond > 0 || internet_cond > 0) {
-          detalleServicios.push({
-            id_unidad: pago.id_unidad,
-            agua: agua_cond,
-            luz: luz_cond,
-            internet: internet_cond,
-            total: agua_cond + luz_cond + internet_cond
-          });
-        }
+      if (!pagosVistos.has(clave)) {
+        // Primera vez que vemos esta unidad/inquilino en el periodo → lo guardamos
+        pagosVistos.set(clave, pago);
+      }
+      // Si ya existe la clave, es un abono del mismo periodo → se ignora
+    });
+
+    // Procesamos solo UNO por unidad/inquilino
+    pagosVistos.forEach((pago) => {
+      const {
+        agua_lectura = 0,
+        luz_lectura = 0,
+        internet_lectura = 0,
+        limite_agua_aplicado = LIMITE_AGUA_CONFIG,
+        limite_luz_aplicado = LIMITE_LUZ_CONFIG,
+        limite_internet_aplicado = LIMITE_INTERNET_CONFIG
+      } = pago.servicios;
+
+      const agua_cond = Math.min(agua_lectura, limite_agua_aplicado);
+      const luz_cond = Math.min(luz_lectura, limite_luz_aplicado);
+      const internet_cond = Math.min(internet_lectura, limite_internet_aplicado);
+
+      agua_condonada_total += agua_cond;
+      luz_condonada_total += luz_cond;
+      internet_condonada_total += internet_cond;
+
+      if (agua_cond > 0 || luz_cond > 0 || internet_cond > 0) {
+        detalleServicios.push({
+          id_unidad: pago.id_unidad,
+          agua: agua_cond,
+          luz: luz_cond,
+          internet: internet_cond,
+          total: agua_cond + luz_cond + internet_cond
+        });
       }
     });
 
@@ -1279,13 +1318,13 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
     const detalleMantenimientos = [];
     let total_mantenimiento = 0;
 
-    mantSnapshot.forEach((doc) => {
-      const mant = doc.data();
+    mantSnapshot.forEach((docSnap) => {
+      const mant = docSnap.data();
       const costo = Number(mant.costo_real || mant.costo_estimado || 0);
       
       total_mantenimiento += costo;
       detalleMantenimientos.push({
-        id: doc.id,
+        id: docSnap.id,
         id_unidad: mant.id_unidad,
         concepto: mant.concepto,
         categoria: mant.categoria,
@@ -1316,6 +1355,7 @@ export const obtenerDatosSeguimientoPeriodo = async (periodo) => {
       total_egresos,
       cantidad_unidades_afectadas: detalleServicios.length
     };
+
   } catch (error) {
     console.error('Error obteniendo datos de seguimiento:', error);
     return {

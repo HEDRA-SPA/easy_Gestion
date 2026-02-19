@@ -223,42 +223,47 @@ const RegistroPagoServicios = () => {
               </div>
 
               {/* Detalle de Servicios */}
-              {datosActuales.servicios.detalle.length > 0 && (
-                <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
-                  <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i className="fa-solid fa-droplet text-cyan-600"></i>
-                    Detalle de Servicios Condonados
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-cyan-200">
-                          <th className="text-left py-2 px-3 font-bold text-gray-700">Unidad</th>
-                          <th className="text-right py-2 px-3 font-bold text-gray-700">Agua</th>
-                          <th className="text-right py-2 px-3 font-bold text-gray-700">Luz</th>
-                          <th className="text-right py-2 px-3 font-bold text-gray-700">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {datosActuales.servicios.detalle.map((detalle, idx) => (
-                          <tr key={idx} className="border-b border-cyan-100 hover:bg-white">
-                            <td className="py-2 px-3 font-medium">{detalle.id_unidad}</td>
-                            <td className="text-right py-2 px-3">
-                              ${detalle.agua.toLocaleString('es-MX', {minimumFractionDigits: 2})}
-                            </td>
-                            <td className="text-right py-2 px-3">
-                              ${detalle.luz.toLocaleString('es-MX', {minimumFractionDigits: 2})}
-                            </td>
-                            <td className="text-right py-2 px-3 font-bold">
-                              ${detalle.total.toLocaleString('es-MX', {minimumFractionDigits: 2})}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+             {/* Detalle de Servicios */}
+{datosActuales.servicios.detalle.length > 0 && (
+  <div className="bg-cyan-50 rounded-xl p-4 border border-cyan-200">
+    <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+      <i className="fa-solid fa-droplet text-cyan-600"></i>
+      Detalle de Servicios Condonados
+    </h3>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-cyan-200">
+            <th className="text-left py-2 px-3 font-bold text-gray-700">Unidad</th>
+            <th className="text-right py-2 px-3 font-bold text-gray-700">💧 Agua</th>
+            <th className="text-right py-2 px-3 font-bold text-gray-700">⚡ Luz</th>
+            <th className="text-right py-2 px-3 font-bold text-gray-700">📡 Internet</th>
+            <th className="text-right py-2 px-3 font-bold text-gray-700">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {datosActuales.servicios.detalle.map((detalle, idx) => (
+            <tr key={idx} className="border-b border-cyan-100 hover:bg-white">
+              <td className="py-2 px-3 font-medium">{detalle.id_unidad}</td>
+              <td className="text-right py-2 px-3">
+                ${detalle.agua.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+              </td>
+              <td className="text-right py-2 px-3">
+                ${detalle.luz.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+              </td>
+              <td className="text-right py-2 px-3">
+                ${(detalle.internet || 0).toLocaleString('es-MX', {minimumFractionDigits: 2})}
+              </td>
+              <td className="text-right py-2 px-3 font-bold">
+                ${detalle.total.toLocaleString('es-MX', {minimumFractionDigits: 2})}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
 
               {/* Detalle de Mantenimientos */}
               {datosActuales.mantenimientos.detalle.length > 0 && (

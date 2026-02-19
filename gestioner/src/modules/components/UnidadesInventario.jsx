@@ -39,19 +39,36 @@ const UnidadesInventario = ({ onAsignarInquilino, onEditarInquilino, onRefrescar
   }, [propiedadSeleccionada]);
 
   const toggleExpandir = (id) => setExpandido(expandido === id ? null : id);
+const handleFinalizar = async (unidad) => {
+  const { id, id_inquilino, id_contrato_actual, nombre_inquilino } = unidad;
+  if (!id_contrato_actual) return;
 
-  const handleFinalizar = async (unidad) => {
-    const { id, id_inquilino, id_contrato_actual, nombre_inquilino } = unidad;
-    if (!id_contrato_actual) return;
-    if (window.confirm(`¿Confirmas la salida de ${nombre_inquilino}?`)) {
-      setLoadingAction(true);
-      try {
-        const res = await finalizarContrato(id, id_inquilino, id_contrato_actual);
-        if (res.exito) { setExpandido(null); if (onRefrescar) onRefrescar(); }
-      } catch (err) { console.error(err); } 
-      finally { setLoadingAction(false); }
+  if (window.confirm(`¿Confirmas la salida de ${nombre_inquilino}?`)) {
+    setLoadingAction(true);
+    try {
+      const res = await finalizarContrato(id, id_inquilino, id_contrato_actual);
+      
+      // LOG DE CONTROL: Para ver qué llega exactamente al componente
+      console.log("Respuesta recibida en componente:", res);
+
+      if (res && res.exito === true) {
+        alert("✅ Contrato finalizado correctamente.");
+        setExpandido(null);
+        if (onRefrescar) onRefrescar();
+      } else if (res && res.exito === false) {
+        // AQUÍ es donde debería entrar con tus periodos pendientes
+        alert(`⚠️ ATENCIÓN:\n${res.mensaje}`);
+      } else {
+        alert("Ocurrió un resultado inesperado.");
+      }
+    } catch (err) {
+      // Si la función falla catastróficamente
+      alert("❌ Error de sistema: " + err.message);
+    } finally {
+      setLoadingAction(false);
     }
-  };
+  }
+};
 
   if (cargandoInicial) return <div className="p-10 text-center text-slate-300">...</div>;
 

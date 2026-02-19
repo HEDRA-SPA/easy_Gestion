@@ -1,3 +1,6 @@
+/*Pendiente a corregir si se quiere volver a utilizar posteriormente
+Si se necesita considerar separar los servicios para que los abonos no se cobren por separado, 
+si hay una lectura de 300 de internet en 3 abonos que se condonen 250, no 900 */
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -19,171 +22,176 @@ const ServiciosDashboard = () => {
   }, []);
 
   const analizarServicios = async () => {
-    if (!periodoInicio) {
-      alert('Por favor selecciona al menos un periodo de inicio');
-      return;
+  if (!periodoInicio) {
+    alert('Por favor selecciona al menos un periodo de inicio');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    console.log('Obteniendo todos los pagos...');
+    const pagosSnapshot = await getDocs(collection(db, 'pagos'));
+    const pagosData = [];
+    
+    pagosSnapshot.forEach((doc) => {
+      pagosData.push({ id: doc.id, ...doc.data() });
+    });
+
+    console.log(`Total de pagos en BD: ${pagosData.length}`);
+
+    // Filtrar por periodo EN MEMORIA
+    let pagosFiltrados = pagosData;
+    
+    if (periodoInicio && periodoFin) {
+      console.log(`Filtrando por rango: ${periodoInicio} a ${periodoFin}`);
+      pagosFiltrados = pagosData.filter(pago => {
+        if (!pago.periodo) return false;
+        return pago.periodo >= periodoInicio && pago.periodo <= periodoFin;
+      });
+    } else if (periodoInicio) {
+      console.log(`Filtrando por periodo único: ${periodoInicio}`);
+      pagosFiltrados = pagosData.filter(pago => pago.periodo === periodoInicio);
     }
 
-    setLoading(true);
-    try {
-      // 🔥 CAMBIO: Obtener TODOS los pagos sin filtro de Firestore
-      console.log('Obteniendo todos los pagos...');
-      const pagosSnapshot = await getDocs(collection(db, 'pagos'));
-      const pagosData = [];
-      
-      pagosSnapshot.forEach((doc) => {
-        pagosData.push({ id: doc.id, ...doc.data() });
-      });
+    console.log(`Pagos después de filtrar por periodo: ${pagosFiltrados.length}`);
 
-      console.log(`Total de pagos en BD: ${pagosData.length}`);
-
-      // 🔥 CAMBIO: Filtrar por periodo EN MEMORIA
-      let pagosFiltrados = pagosData;
-      
-      if (periodoInicio && periodoFin) {
-        console.log(`Filtrando por rango: ${periodoInicio} a ${periodoFin}`);
-        pagosFiltrados = pagosData.filter(pago => {
-          if (!pago.periodo) return false;
-          return pago.periodo >= periodoInicio && pago.periodo <= periodoFin;
-        });
-      } else if (periodoInicio) {
-        console.log(`Filtrando por periodo único: ${periodoInicio}`);
-        pagosFiltrados = pagosData.filter(pago => pago.periodo === periodoInicio);
-      }
-
-      console.log(`Pagos después de filtrar por periodo: ${pagosFiltrados.length}`);
-
-      // Filtrar por propiedad si se especificó
-      if (propiedadFiltro) {
-        console.log(`Filtrando por propiedad: ${propiedadFiltro}`);
-        pagosFiltrados = pagosFiltrados.filter(pago => 
-          pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
-        );
-        console.log(`Pagos después de filtrar por propiedad: ${pagosFiltrados.length}`);
-      }
-
-      // Ya no filtramos por inquilinos activos - queremos ver TODOS los pagos del periodo
-      const pagosActivos = pagosFiltrados;
-
-      console.log(`Pagos a analizar: ${pagosActivos.length}`);
-
-      // Analizar servicios
-      const analisis = {
-        total_pagos_analizados: pagosActivos.length,
-        total_agua_consumida: 0,
-        total_luz_consumida: 0,
-        total_agua_condonada: 0,
-        total_luz_condonada: 0,
-        unidades_con_servicios: 0,
-        unidades_excedieron_agua: 0,
-        unidades_excedieron_luz: 0,
-        excedentes_cobrados_deposito: 0,
-        excedentes_cobrados_renta: 0,
-        total_excedentes_agua: 0,
-        total_excedentes_luz: 0,
-        por_unidad: {},
-        por_propiedad: {}
-      };
-
-      pagosActivos.forEach(pago => {
-        if (pago.servicios) {
-          const { 
-            agua_lectura = 0, 
-            luz_lectura = 0,
-            limite_agua_aplicado = 250,
-            limite_luz_aplicado = 250,
-            excedentes_cobrados_de = 'deposito',
-            excedentes_del_deposito = 0
-          } = pago.servicios;
-
-          // Solo contar si hay consumo real (>0)
-          if (agua_lectura > 0 || luz_lectura > 0) {
-            console.log(`✅ Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}`);
-            analisis.unidades_con_servicios++;
-
-            // Sumar consumos totales
-            analisis.total_agua_consumida += agua_lectura;
-            analisis.total_luz_consumida += luz_lectura;
-
-            // Calcular lo que se condonó (usó del límite)
-            const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
-            const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
-            
-            analisis.total_agua_condonada += agua_condonada;
-            analisis.total_luz_condonada += luz_condonada;
-
-            // Calcular excedentes
-            const excedente_agua = Math.max(0, agua_lectura - limite_agua_aplicado);
-            const excedente_luz = Math.max(0, luz_lectura - limite_luz_aplicado);
-            
-            if (excedente_agua > 0) analisis.unidades_excedieron_agua++;
-            if (excedente_luz > 0) analisis.unidades_excedieron_luz++;
-
-            analisis.total_excedentes_agua += excedente_agua;
-            analisis.total_excedentes_luz += excedente_luz;
-
-            // Contar de dónde se cobraron excedentes
-            if (excedentes_cobrados_de === 'deposito') {
-              analisis.excedentes_cobrados_deposito += excedentes_del_deposito;
-            } else {
-              const total_excedente = excedente_agua + excedente_luz;
-              analisis.excedentes_cobrados_renta += total_excedente;
-            }
-
-            // Agrupar por unidad
-            if (!analisis.por_unidad[pago.id_unidad]) {
-              analisis.por_unidad[pago.id_unidad] = {
-                unidad: pago.id_unidad,
-                agua_total: 0,
-                luz_total: 0,
-                agua_condonada: 0,
-                luz_condonada: 0,
-                excedente_agua: 0,
-                excedente_luz: 0,
-                pagos_con_servicios: 0
-              };
-            }
-
-            analisis.por_unidad[pago.id_unidad].agua_total += agua_lectura;
-            analisis.por_unidad[pago.id_unidad].luz_total += luz_lectura;
-            analisis.por_unidad[pago.id_unidad].agua_condonada += agua_condonada;
-            analisis.por_unidad[pago.id_unidad].luz_condonada += luz_condonada;
-            analisis.por_unidad[pago.id_unidad].excedente_agua += excedente_agua;
-            analisis.por_unidad[pago.id_unidad].excedente_luz += excedente_luz;
-            analisis.por_unidad[pago.id_unidad].pagos_con_servicios++;
-
-            // Agrupar por propiedad (usando prefijo de unidad)
-            const prefijo = pago.id_unidad.split('-')[0];
-            if (!analisis.por_propiedad[prefijo]) {
-              analisis.por_propiedad[prefijo] = {
-                prefijo,
-                agua_total: 0,
-                luz_total: 0,
-                agua_condonada: 0,
-                luz_condonada: 0,
-                unidades: 0
-              };
-            }
-
-            analisis.por_propiedad[prefijo].agua_total += agua_lectura;
-            analisis.por_propiedad[prefijo].luz_total += luz_lectura;
-            analisis.por_propiedad[prefijo].agua_condonada += agua_condonada;
-            analisis.por_propiedad[prefijo].luz_condonada += luz_condonada;
-            analisis.por_propiedad[prefijo].unidades++;
-          }
-        }
-      });
-
-      console.log('Análisis completado:', analisis);
-      setDatos(analisis);
-      setPagosDetalle(pagosActivos);
-    } catch (error) {
-      console.error('Error al analizar servicios:', error);
-      alert('Error al analizar servicios: ' + error.message);
-    } finally {
-      setLoading(false);
+    // Filtrar por propiedad si se especificó
+    if (propiedadFiltro) {
+      console.log(`Filtrando por propiedad: ${propiedadFiltro}`);
+      pagosFiltrados = pagosFiltrados.filter(pago => 
+        pago.id_unidad && pago.id_unidad.startsWith(propiedadFiltro)
+      );
+      console.log(`Pagos después de filtrar por propiedad: ${pagosFiltrados.length}`);
     }
-  };
+
+    const pagosActivos = pagosFiltrados;
+    console.log(`Pagos a analizar: ${pagosActivos.length}`);
+
+    // Analizar servicios
+    const analisis = {
+      total_pagos_analizados: pagosActivos.length,
+      total_agua_consumida: 0,
+      total_luz_consumida: 0,
+      total_agua_condonada: 0,
+      total_luz_condonada: 0,
+      unidades_con_servicios: 0,
+      unidades_excedieron_agua: 0,
+      unidades_excedieron_luz: 0,
+      excedentes_cobrados_deposito: 0,
+      excedentes_cobrados_renta: 0,
+      total_excedentes_agua: 0,
+      total_excedentes_luz: 0,
+      por_unidad: {},
+      por_propiedad: {}
+    };
+
+    // ============================================
+    // DEDUPLICAR: solo un pago por periodo + unidad
+    // Los abonos parciales comparten los mismos valores
+    // de servicios, así que solo procesamos UNO por clave.
+    // ============================================
+    const pagosVistos = new Map(); // clave: "periodo_id_unidad" → pago
+
+    pagosActivos.forEach(pago => {
+      if (!pago.servicios) return;
+      if (pago.servicios.agua_lectura === 0 && pago.servicios.luz_lectura === 0) return;
+
+      const clave = `${pago.periodo}_${pago.id_unidad}`;
+      if (!pagosVistos.has(clave)) {
+        pagosVistos.set(clave, pago);
+      }
+    });
+
+    // Procesar solo los pagos deduplicados
+    pagosVistos.forEach(pago => {
+      const { 
+        agua_lectura = 0, 
+        luz_lectura = 0,
+        limite_agua_aplicado = 250,
+        limite_luz_aplicado = 250,
+        excedentes_cobrados_de = 'deposito',
+        excedentes_del_deposito = 0
+      } = pago.servicios;
+
+      console.log(`✅ Unidad ${pago.id_unidad} (${pago.periodo}): Agua=${agua_lectura}, Luz=${luz_lectura}`);
+      analisis.unidades_con_servicios++;
+
+      analisis.total_agua_consumida += agua_lectura;
+      analisis.total_luz_consumida += luz_lectura;
+
+      const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
+      const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
+      
+      analisis.total_agua_condonada += agua_condonada;
+      analisis.total_luz_condonada += luz_condonada;
+
+      const excedente_agua = Math.max(0, agua_lectura - limite_agua_aplicado);
+      const excedente_luz = Math.max(0, luz_lectura - limite_luz_aplicado);
+      
+      if (excedente_agua > 0) analisis.unidades_excedieron_agua++;
+      if (excedente_luz > 0) analisis.unidades_excedieron_luz++;
+
+      analisis.total_excedentes_agua += excedente_agua;
+      analisis.total_excedentes_luz += excedente_luz;
+
+      if (excedentes_cobrados_de === 'deposito') {
+        analisis.excedentes_cobrados_deposito += excedentes_del_deposito;
+      } else {
+        analisis.excedentes_cobrados_renta += excedente_agua + excedente_luz;
+      }
+
+      // Agrupar por unidad
+      if (!analisis.por_unidad[pago.id_unidad]) {
+        analisis.por_unidad[pago.id_unidad] = {
+          unidad: pago.id_unidad,
+          agua_total: 0,
+          luz_total: 0,
+          agua_condonada: 0,
+          luz_condonada: 0,
+          excedente_agua: 0,
+          excedente_luz: 0,
+          pagos_con_servicios: 0
+        };
+      }
+
+      analisis.por_unidad[pago.id_unidad].agua_total += agua_lectura;
+      analisis.por_unidad[pago.id_unidad].luz_total += luz_lectura;
+      analisis.por_unidad[pago.id_unidad].agua_condonada += agua_condonada;
+      analisis.por_unidad[pago.id_unidad].luz_condonada += luz_condonada;
+      analisis.por_unidad[pago.id_unidad].excedente_agua += excedente_agua;
+      analisis.por_unidad[pago.id_unidad].excedente_luz += excedente_luz;
+      analisis.por_unidad[pago.id_unidad].pagos_con_servicios++;
+
+      // Agrupar por propiedad
+      const prefijo = pago.id_unidad.split('-')[0];
+      if (!analisis.por_propiedad[prefijo]) {
+        analisis.por_propiedad[prefijo] = {
+          prefijo,
+          agua_total: 0,
+          luz_total: 0,
+          agua_condonada: 0,
+          luz_condonada: 0,
+          unidades: 0
+        };
+      }
+
+      analisis.por_propiedad[prefijo].agua_total += agua_lectura;
+      analisis.por_propiedad[prefijo].luz_total += luz_lectura;
+      analisis.por_propiedad[prefijo].agua_condonada += agua_condonada;
+      analisis.por_propiedad[prefijo].luz_condonada += luz_condonada;
+      analisis.por_propiedad[prefijo].unidades++;
+    });
+
+    console.log('Análisis completado:', analisis);
+    setDatos(analisis);
+    setPagosDetalle(pagosActivos);
+  } catch (error) {
+    console.error('Error al analizar servicios:', error);
+    alert('Error al analizar servicios: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const generarRangoBimestral = () => {
     if (!periodoInicio) return;

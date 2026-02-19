@@ -126,6 +126,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
       
       const aguaOriginal = Number(primerPago.servicios?.agua_lectura || 0);
       const luzOriginal = Number(primerPago.servicios?.luz_lectura || 0);
+      const internetOriginal = Number(primerPago.servicios?.internet_lectura || 0);
 
       console.log("✅ ABONO ADICIONAL - Lecturas:", { aguaOriginal, luzOriginal });
 
@@ -136,6 +137,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         existeRegistro: true,
         aguaOriginal: aguaOriginal,
         luzOriginal: luzOriginal,
+        internetOriginal: internetOriginal,
         excedentesAplicados: 0,
         depositoSuficiente: true
       };
@@ -176,6 +178,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         existeRegistro: false,
         aguaOriginal: 0,
         luzOriginal: 0,
+        internetOriginal: 0,
         excedentesAplicados,
         depositoSuficiente
       };
@@ -191,6 +194,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
         existeRegistro: false,
         aguaOriginal: 0,
         luzOriginal: 0,
+        internetOriginal: 0,
         excedentesAplicados: 0,
         depositoSuficiente: true
       };
@@ -327,7 +331,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
               <input 
                 type="number" 
                 className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
-                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura}
+          value={(estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.aguaOriginal : formData.agua_lectura) || 0}
                 onChange={(e) => setFormData({...formData, agua_lectura: Number(e.target.value)})}
                 disabled={estadoFinancieroMes.existeRegistro}
               />
@@ -337,7 +341,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
               <input 
                 type="number" 
                 className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
-                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura}
+                value={(estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.luzOriginal : formData.luz_lectura) || 0}
                 onChange={(e) => setFormData({...formData, luz_lectura: Number(e.target.value)})}
                 disabled={estadoFinancieroMes.existeRegistro}
               />
@@ -347,7 +351,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
               <input 
                 type="number" 
                 className={`p-3 pt-5 w-full border rounded font-black text-center text-lg ${estadoFinancieroMes.existeRegistro ? 'bg-gray-200 cursor-not-allowed' : ''}`}
-                value={estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.internetOriginal : formData.internet_lectura}
+                value={(estadoFinancieroMes.existeRegistro ? estadoFinancieroMes.internetOriginal : formData.internet_lectura) || 0}
                 onChange={(e) => setFormData({...formData, internet_lectura: Number(e.target.value)})}
                 disabled={estadoFinancieroMes.existeRegistro}
               />
@@ -429,7 +433,7 @@ const FormularioRegistroPago = ({ unidad, pagosExistentes = [], onExito, onCance
             <input 
               type="number" 
               className="w-full text-center text-4xl font-black bg-transparent text-amber-900 outline-none"
-              value={formData.monto_recibido || ""}
+              value={formData.monto_recibido ?? ""}
               onChange={(e) => setFormData({...formData, monto_recibido: Number(e.target.value)})}
             />
           </div>

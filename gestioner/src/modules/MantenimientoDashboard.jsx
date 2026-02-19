@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc } from 'firebase/firestore';
 import { db } from './firebase';
 
 const MantenimientoDashboard = () => {
@@ -109,7 +109,19 @@ const MantenimientoDashboard = () => {
       </div>
     );
   }
+ const eliminarMantenimiento = async (id) => {
+    const confirmar = window.confirm('¿Seguro que deseas eliminar este mantenimiento? Esta acción no se puede deshacer.');
+    if (!confirmar) return;
 
+    try {
+      await deleteDoc(doc(db, 'mantenimientos', id));
+      // Recargar estadísticas después de eliminar
+      await cargarEstadisticas();
+    } catch (error) {
+      console.error('Error al eliminar:', error);
+      alert('Error al eliminar el mantenimiento: ' + error.message);
+    }
+  };
   return (
     <div className="max-w-7xl mx-auto p-6 space-y-6">
       {/* Header */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs, doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, doc, updateDoc, Timestamp, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
 const MantenimientoLista = () => {
@@ -81,6 +81,21 @@ const MantenimientoLista = () => {
       id_unidad: '',
       id_propiedad: '',
     });
+  };
+
+  const eliminarMantenimiento = async (id) => {
+    const confirmar = window.confirm('¿Seguro que deseas eliminar este mantenimiento? Esta acción no se puede deshacer.');
+    if (!confirmar) return;
+
+    try {
+      await deleteDoc(doc(db, 'mantenimientos', id));
+      // Recargar lista después de eliminar
+      await cargarMantenimientos();
+      alert('✅ Mantenimiento eliminado correctamente');
+    } catch (error) {
+      console.error('Error al eliminar:', error);
+      alert('Error al eliminar el mantenimiento: ' + error.message);
+    }
   };
 
   const abrirModal = (mantenimiento) => {
@@ -327,9 +342,21 @@ const MantenimientoLista = () => {
               </div>
 
               {/* Footer */}
-              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+              <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex justify-between items-center">
                 <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">
                   Ver detalles →
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    eliminarMantenimiento(mant.id);
+                  }}
+                  className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                  title="Eliminar mantenimiento"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
                 </button>
               </div>
             </div>

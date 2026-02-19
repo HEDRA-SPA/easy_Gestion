@@ -184,57 +184,70 @@ const ReporteFinancieroGlobal = () => {
         resultado.egresos.mantenimientos.por_estatus[mant.estatus] += costo;
       });
 
-      // ============================================
-      // 3. OBTENER EGRESOS - SERVICIOS CONDONADOS
-      // ============================================
-      const pagosRef = collection(db, 'pagos');
-      const qPagos = query(
-        pagosRef,
-        where('periodo', '>=', periodoInicio),
-        where('periodo', '<=', periodoFin)
-      );
-      const pagosSnapshot = await getDocs(qPagos);
+// ============================================
+// 3. OBTENER EGRESOS - SERVICIOS CONDONADOS
+// ============================================
+const pagosRef = collection(db, 'pagos');
+const qPagos = query(
+  pagosRef,
+  where('periodo', '>=', periodoInicio),
+  where('periodo', '<=', periodoFin)
+);
+const pagosSnapshot = await getDocs(qPagos);
 
-        pagosSnapshot.forEach((doc) => {
-        const pago = doc.data();
-        
-        if (pago.servicios) {
-          const {
-            agua_lectura = 0,
-            luz_lectura = 0,
-            internet_lectura = 0,
-            limite_agua_aplicado = LIMITE_AGUA_CONFIG, 
-            limite_luz_aplicado = LIMITE_LUZ_CONFIG,
-            limite_internet_aplicado = LIMITE_INTERNET_CONFIG
-          } = pago.servicios;
+// Deduplicar por id_inquilino + id_unidad + periodo.
+// Los abonos parciales comparten los mismos valores de servicios,
+// así que solo procesamos UNO por combinación de periodo + unidad + inquilino.
+const pagosVistos = new Map(); // clave: "periodo_id_inquilino_id_unidad" → pago
 
-          // Calcular lo condonado (lo que NOSOTROS pagamos)
-          const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
-          const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
-          const internet_condonada = Math.min(internet_lectura, limite_internet_aplicado);
+pagosSnapshot.forEach((docSnap) => {
+  const pago = docSnap.data();
+  if (!pago.servicios) return;
 
-          resultado.egresos.servicios.agua_condonada += agua_condonada;
-          resultado.egresos.servicios.luz_condonada += luz_condonada;
-          resultado.egresos.servicios.internet_condonada += internet_condonada;
+  const clave = `${pago.periodo}_${pago.id_inquilino}_${pago.id_unidad}`;
 
-          if (agua_condonada > 0 || luz_condonada > 0 || internet_condonada > 0) {
-            resultado.egresos.servicios.cantidad_unidades++;
-            resultado.egresos.servicios.detalle.push({
-              periodo: pago.periodo,
-              unidad: pago.id_unidad,
-              agua_condonada,
-              luz_condonada,
-              internet_condonada,
-              total_condonado: agua_condonada + luz_condonada + internet_condonada
-            });
-          }
-        }
-      });
+  if (!pagosVistos.has(clave)) {
+    pagosVistos.set(clave, pago);
+  }
+  // Si ya existe la clave → es abono del mismo periodo → se ignora
+});
 
-      resultado.egresos.servicios.total_condonado = 
-        resultado.egresos.servicios.agua_condonada + 
-        resultado.egresos.servicios.luz_condonada +
-        resultado.egresos.servicios.internet_condonada;
+// Procesamos solo UNO por unidad/inquilino/periodo
+pagosVistos.forEach((pago) => {
+  const {
+    agua_lectura = 0,
+    luz_lectura = 0,
+    internet_lectura = 0,
+    limite_agua_aplicado = LIMITE_AGUA_CONFIG,
+    limite_luz_aplicado = LIMITE_LUZ_CONFIG,
+    limite_internet_aplicado = LIMITE_INTERNET_CONFIG
+  } = pago.servicios;
+
+  const agua_condonada = Math.min(agua_lectura, limite_agua_aplicado);
+  const luz_condonada = Math.min(luz_lectura, limite_luz_aplicado);
+  const internet_condonada = Math.min(internet_lectura, limite_internet_aplicado);
+
+  resultado.egresos.servicios.agua_condonada += agua_condonada;
+  resultado.egresos.servicios.luz_condonada += luz_condonada;
+  resultado.egresos.servicios.internet_condonada += internet_condonada;
+
+  if (agua_condonada > 0 || luz_condonada > 0 || internet_condonada > 0) {
+    resultado.egresos.servicios.cantidad_unidades++;
+    resultado.egresos.servicios.detalle.push({
+      periodo: pago.periodo,
+      unidad: pago.id_unidad,
+      agua_condonada,
+      luz_condonada,
+      internet_condonada,
+      total_condonado: agua_condonada + luz_condonada + internet_condonada
+    });
+  }
+});
+
+resultado.egresos.servicios.total_condonado =
+  resultado.egresos.servicios.agua_condonada +
+  resultado.egresos.servicios.luz_condonada +
+  resultado.egresos.servicios.internet_condonada;
 
       // ============================================
       // 4. CALCULAR TOTALES Y BALANCE

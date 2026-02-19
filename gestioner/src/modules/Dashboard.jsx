@@ -80,7 +80,6 @@ const Dashboard = ({
     { id: 'archivo', icon: 'fas fa-folder', label: 'Archivo' },
     { id: 'mantenimiento-form', icon: 'fas fa-wrench', label: 'Mantenimiento' },
     { id: 'registro-pago-servicios', icon: 'fas fa-receipt', label: 'Pago Servicios' },
-    { id: 'servicios-dashboard', icon: 'fas fa-tint', label: 'Servicios' },
     { id: 'reporte-financiero', icon: 'fas fa-money-bill', label: 'Reporte Fin.' },
     { id: 'gestion-propiedades', icon: 'fas fa-home', label: 'Propiedades' },
   ];
@@ -336,13 +335,13 @@ const Dashboard = ({
               <RegistroPagoServicios />
             </div>
           )}
-
+{/*
           {vista === 'servicios-dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <ServiciosDashboard />
             </div>
           )}
-
+*/}
           {vista === 'reporte-financiero' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <ReporteFinancieroGlobal />
