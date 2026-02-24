@@ -21,6 +21,8 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [inquilinoInfo, setInquilinoInfo] = useState(null);
   const [afectaInquilino, setAfectaInquilino] = useState(false);
+  const [unidadValida, setUnidadValida] = useState(false);
+  const [errorUnidad, setErrorUnidad] = useState('');
 
   // Cargar información de la unidad cuando se selecciona
   useEffect(() => {
@@ -45,6 +47,8 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
       
       if (unidadSnap.exists()) {
         const unidadData = unidadSnap.data();
+        setUnidadValida(true);
+        setErrorUnidad('')
         
         // Actualizar propiedad
         setFormData(prev => ({
@@ -79,8 +83,15 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
             });
           }
         } else {
+          
           setInquilinoInfo(null);
         }
+      } else {
+        // ESTO ES LO QUE ESTABA MAL UBICADO
+        setUnidadValida(false);
+        setInquilinoInfo(null);
+        setFormData(prev => ({ ...prev, id_propiedad: '' }));
+        setErrorUnidad(`La unidad "${unidadId}" no existe.`);
       }
     } catch (error) {
       console.error('Error al cargar info de unidad:', error);
@@ -184,6 +195,10 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
     e.preventDefault();
     setLoading(true);
 
+    if (!unidadValida) {
+    alert('⚠️ No puedes registrar el mantenimiento: La unidad ingresada no es válida o no existe.');
+    return;
+  }
     try {
       const ahora = new Date();
       
@@ -273,20 +288,30 @@ const MantenimientoForm = ({ unidadId, onSuccess }) => {
           <h3 className="font-semibold text-lg mb-3 text-blue-900"><i className="fa-solid fa-map-pin"></i> Información de Unidad</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Unidad *
-              </label>
-              <input
-                type="text"
-                name="id_unidad"
-                value={formData.id_unidad}
-                onChange={handleChange}
-                required
-                placeholder="Ej: CH-8"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+           <div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">
+    Unidad *
+  </label>
+  <input
+    type="text"
+    name="id_unidad"
+    value={formData.id_unidad}
+    onChange={handleChange}
+    required
+    placeholder="Ej: CH-8"
+    className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 ${
+      errorUnidad 
+        ? 'border-red-500 focus:ring-red-200' 
+        : 'border-gray-300 focus:ring-blue-500'
+    }`}
+  />
+  {/* Mensaje de error amigable */}
+  {errorUnidad && (
+    <p className="text-red-600 text-xs mt-1 font-medium italic">
+      <i className="fa-solid fa-circle-exclamation mr-1"></i> {errorUnidad}
+    </p>
+  )}
+</div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
