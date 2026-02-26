@@ -4,6 +4,11 @@
 .env.test.local
 .env.production.local
 
+# Firebase admin key (sensitive)
+# ignorar en la raíz y en cualquier subdirectorio
+serviceAccountKey.json
+**/serviceAccountKey.json
+
 
 # Logs
 logs
